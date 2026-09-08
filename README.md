@@ -26,7 +26,7 @@
 - 不自动购买资源、删除 ISP/Gateway 或重装服务器。
 - 每个完成的模块独立验证并提交；未完成的能力明确标注。
 
-## 本地运行（Phase 0）
+## 本地运行
 
 需要 Python 3.11+：
 
@@ -35,13 +35,22 @@ python -m venv .venv
 # Linux: source .venv/bin/activate
 # Windows PowerShell: .venv/Scripts/Activate.ps1
 python -m pip install -r requirements.txt
+python -m scripts.setup
 python -m uvicorn controller.main:app --host 127.0.0.1 --port 8000
 ```
 
-打开 http://127.0.0.1:8000，显示 Private Network / System Online。
-本阶段只供本机验证，不能暴露公网；Phase 1 加入登录和 HTTPS 部署。
+首次设置会在本机交互式创建管理员，无默认密码；密码至少 14 个字符。
+打开 http://127.0.0.1:8000，登录后显示 Private Network / System Online。
+这代表 Controller 与数据库在线，不代表 Gateway 或 ISP 已接入。
+生产环境必须设置 `APP_ENV=production` 和 `PUBLIC_URL=https://实际域名`，由 Caddy 提供 HTTPS。
+
+重置管理员：`python -m scripts.setup --reset-admin`，会撤销全部旧会话。
+在线备份：`python -m scripts.backup`；使用 SQLite backup API，校验完整性并清除备份中的会话。
+备份含密码哈希和后续业务数据，应使用受限权限并保存在 Git 外。
 
 测试：`python -m pip install -r requirements-dev.txt`，然后 `python -m pytest`。
 工程说明见 ARCHITECTURE.md、MVP.md、AI-OPERATIONS.md、TECH-STACK.md。
 
-当前状态：Phase 0 项目骨架，尚未完成 MVP 验收。
+当前状态：Phase 0 已完成；Phase 1 Controller 登录、持久化与响应式首页已实现。
+Gateway、ISP、设备、订阅和监控尚未实现；导航明确标为待接入。
+尚未完成生产 HTTPS 和真实手机链路验收。

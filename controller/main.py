@@ -1,35 +1,103 @@
-"""Phase 0 runnable baseline; authentication is added in Phase 1."""
-
 import sqlite3
 from contextlib import asynccontextmanager
-from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-ROOT = Path(__file__).resolve().parent.parent
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    (ROOT / "database").mkdir(exist_ok=True)
-    with sqlite3.connect(ROOT / "database" / "controller.db") as db:
-        db.execute("PRAGMA journal_mode=WAL")
-        db.execute("SELECT 1")
-    yield
+from controller.api.dashboard import router
+from controller.config import ROOT, Settings
+from controller.services.database import connect, migrate
 
 
-app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+class BodyLimitMiddleware:
+    """Bound request bodies, including chunked requests."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["method"] not in {"POST", "PUT", "PATCH"}:
+            return await self.app(scope, receive, send)
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            body.extend(message.get("body", b""))
+            if len(body) > 16384:
+                response = JSONResponse({"detail": "Request too large"}, status_code=413)
+                return await response(scope, receive, send)
+            if not message.get("more_body", False):
+                break
+        delivered = False
+
+        async def replay():
+            nonlocal delivered
+            if not delivered:
+                delivered = True
+                return {"type": "http.request", "body": bytes(body), "more_body": False}
+            return await receive()
+
+        await self.app(scope, replay, send)
 
 
-@app.get("/", response_class=HTMLResponse)
-def overview():
-    return "<h1>Private Network</h1><p>System Online</p><p>Phase 0: local baseline only.</p>"
+def create_app(settings: Settings | None = None):
+    settings = settings or Settings.from_env()
+
+    @asynccontextmanager
+    async def lifespan(app):
+        migrate(settings.database_path)
+        yield
+
+    app = FastAPI(
+        title="Private Network",
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
+    app.state.settings = settings
+    app.add_middleware(BodyLimitMiddleware)
+    if settings.secure:
+        app.add_middleware(HTTPSRedirectMiddleware)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=[settings.hostname])
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers.update(
+            {
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+                "X-Frame-Options": "DENY",
+                "Referrer-Policy": "no-referrer",
+                "Content-Security-Policy": (
+                    "default-src 'self'; style-src 'self'; script-src 'none'; "
+                    "img-src 'self' data:; form-action 'self'; "
+                    "frame-ancestors 'none'; base-uri 'none'"
+                ),
+            }
+        )
+        if settings.secure:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000"
+        return response
+
+    @app.exception_handler(sqlite3.Error)
+    async def database_unavailable(request, exc):
+        return JSONResponse({"detail": "Controller database unavailable"}, status_code=503)
+
+    @app.get("/healthz")
+    def health():
+        with connect(settings.database_path) as db:
+            db.execute("SELECT COUNT(*) FROM administrator").fetchone()
+        return {"status": "ok", "component": "controller"}
+
+    app.mount("/static", StaticFiles(directory=ROOT / "controller/static"), name="static")
+    app.include_router(router)
+    return app
 
 
-@app.get("/healthz")
-def health():
-    with sqlite3.connect(ROOT / "database" / "controller.db") as db:
-        db.execute("SELECT 1")
-    return {"status": "ok", "component": "controller"}
-
+app = create_app()
