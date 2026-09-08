@@ -109,6 +109,6 @@ fi
 systemctl enable caddy
 printf '%s\n' "$revision" > "$app_dir/.installed-revision"
 chmod 0644 "$app_dir/.installed-revision"
-curl --fail --silent --show-error --retry 12 --retry-delay 5 --max-time 15 "https://$domain/healthz" \
+curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 --retry-max-time 120 --max-time 15 "https://$domain/healthz" \
     || die 'Controller is running, but public HTTPS is not verified. Check target ownership, DNS (if used), ports 80/443, and Caddy logs.'
 printf '\nController verified: https://%s\n' "$domain"

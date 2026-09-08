@@ -5,6 +5,8 @@
 Controller 使用 Debian 12、Python 3.11+、FastAPI、Jinja2、SQLite、Caddy 和 systemd。
 Controller 只管理资源；用户业务流量走 Gateway → SOCKS5 ISP，不通过 Controller。
 Gateway 使用 Debian 12、sing-box、systemd 和 nftables，通过受校验的 SSH 连接管理。
+首次部署允许控制台与未来 Gateway 共用一台 VPS，减少资源需求；仍按独立服务和配置目录管理。当前只部署了 Controller，Gateway 在 Phase 2 实现。
+没有域名时可使用公网 IPv4 的 Let's Encrypt 短期证书，由 Caddy 自动续期。主机已有防火墙时保留管理规则，仅补充网站端口。
 
 ## 模块边界
 
@@ -39,4 +41,3 @@ Gateway 客户端入口协议在 Phase 2/4 根据 sing-box 与 Shadowrocket 支�
 共享订阅可供两台手机使用，但设备绑定只是管理记录，不能仅凭共享链接强制识别两台物理设备。
 HTTP 探测失败率不可冒充网络层丢包；Phase 8 需明确测量协议、采样数和窗口。
 禁止将 mock 测试通过视为两台 iPhone 固定出口链路已验收。
-

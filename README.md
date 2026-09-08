@@ -42,7 +42,7 @@ python -m uvicorn controller.main:app --host 127.0.0.1 --port 8000
 首次设置会在本机交互式创建管理员，无默认密码；密码至少 14 个字符。
 打开 http://127.0.0.1:8000，登录后显示 Private Network / System Online。
 这代表 Controller 与数据库在线，不代表 Gateway 或 ISP 已接入。
-生产环境必须设置 `APP_ENV=production` 和 `PUBLIC_URL=https://实际域名`，由 Caddy 提供 HTTPS。
+生产环境必须设置 `APP_ENV=production`，`PUBLIC_URL` 使用 HTTPS 域名或公网 IPv4，由 Caddy 提供 HTTPS。公网 IPv4 模式不需要购买域名。
 
 重置管理员：`python -m scripts.setup --reset-admin`，会撤销全部旧会话。
 在线备份：`python -m scripts.backup`；使用 SQLite backup API，校验完整性并清除备份中的会话。
@@ -56,6 +56,6 @@ Debian 12 部署步骤见 [deploy/README.md](deploy/README.md)。
 开发任务见 [GitHub Issues](https://github.com/junxianxia0413-eng/private-fixed-egress/issues)。
 当前连接没有 Milestone 创建能力，暂用 Phase 0–10 共 11 个 Issue 跟踪。
 
-当前状态：Phase 0 已完成；Phase 1 Controller 登录、持久化与响应式首页已实现。
+当前状态：Phase 0、Phase 1 已完成。Controller 已在真实 Debian 12 VPS 上部署，公网 IP 证书、Chrome/Edge 登录、服务重启恢复与备份验证通过。
 Gateway、ISP、设备、订阅和监控尚未实现；导航明确标为待接入。
-尚未完成生产 HTTPS 和真实手机链路验收。
+尚未完成真实手机固定出口链路验收。

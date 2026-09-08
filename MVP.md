@@ -19,7 +19,7 @@
 ## 阶段门槛
 
 每阶段先实现、再验证、独立提交。未实现模块保留目录与 Issue，不用假数据填充可用功能。
-阶段 1 的真实 HTTPS 验收需要 Controller VPS、域名和 DNS；阶段 2 需要 Gateway VPS 及 SSH 信任材料。
+阶段 1 的真实 HTTPS 验收已通过现有 Controller VPS 的公网 IPv4 完成，无需域名；域名和 DNS 是可选方案。阶段 2 需要 Gateway VPS 及 SSH 信任材料，初期可与 Controller 共用已有 VPS。
 阶段 3 起需要 SOCKS5 ISP；最终验收需要两台 iPhone + Shadowrocket。
 
 ## 最终现场测试（当前全部未执行）
@@ -36,4 +36,3 @@
 10. 手机浏览器操作核心功能可用。
 
 通过软件单元/集成测试不能代替以上现场证据。最终完成定义是两台手机稳定共享静态 ISP 出口，且控制台显示真实状态。
-
