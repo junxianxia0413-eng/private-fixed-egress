@@ -73,7 +73,7 @@ def create_app(settings: Settings | None = None):
                 "Cache-Control": "no-store",
                 "X-Content-Type-Options": "nosniff",
                 "X-Frame-Options": "DENY",
-                "Referrer-Policy": "no-referrer",
+                "Referrer-Policy": "same-origin",
                 "Content-Security-Policy": (
                     "default-src 'self'; style-src 'self'; script-src 'none'; "
                     "img-src 'self' data:; form-action 'self'; "

@@ -195,6 +195,7 @@ def test_production_https_and_secure_cookie(tmp_path):
 def test_security_headers_hosts_and_oversized_input(client):
     response = client.get("/login")
     assert response.headers["cache-control"] == "no-store"
+    assert response.headers["referrer-policy"] == "same-origin"
     assert response.headers["x-frame-options"] == "DENY"
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
     assert client.get("/", headers={"Host": "evil.example"}).status_code == 400
