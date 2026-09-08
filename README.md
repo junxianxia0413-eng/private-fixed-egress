@@ -51,6 +51,11 @@ python -m uvicorn controller.main:app --host 127.0.0.1 --port 8000
 测试：`python -m pip install -r requirements-dev.txt`，然后 `python -m pytest`。
 工程说明见 ARCHITECTURE.md、MVP.md、AI-OPERATIONS.md、TECH-STACK.md。
 
+Debian 12 部署步骤见 [deploy/README.md](deploy/README.md)。
+测试证据与未完成验收见 [VALIDATION.md](VALIDATION.md)。
+开发任务见 [GitHub Issues](https://github.com/junxianxia0413-eng/private-fixed-egress/issues)。
+当前连接没有 Milestone 创建能力，暂用 Phase 0–10 共 11 个 Issue 跟踪。
+
 当前状态：Phase 0 已完成；Phase 1 Controller 登录、持久化与响应式首页已实现。
 Gateway、ISP、设备、订阅和监控尚未实现；导航明确标为待接入。
 尚未完成生产 HTTPS 和真实手机链路验收。
