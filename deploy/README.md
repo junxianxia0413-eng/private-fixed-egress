@@ -6,7 +6,7 @@
 部署前准备：
 
 1. 一台已有 Debian 12 Controller VPS，建议 1 CPU / 1 GB / 20 GB。
-2. 域名或子域名的 A/AAAA 记录指向该 VPS；不配置指向其他主机的 AAAA。
+2. 可用公网 IPv4，或域名的 A/AAAA 记录指向该 VPS；使用 IPv4 模式不需要域名。
 3. SSH 地址、端口、用户、可信 host key 指纹，以及本地 SSH 私钥路径。
 4. 入站 TCP 80/443 用于 HTTPS；SSH 仅向管理来源开放。
 
@@ -26,6 +26,12 @@ sudo bash deploy/install_controller.sh network.example.com
 ```
 
 把示例域名换成已指向 VPS 的真实域名。脚本会交互式要求管理员名称和密码。
+也可以把参数直接替换成你控制的公网 IPv4。IPv4 模式安装 Caddy 官方稳定版（至少 2.11），显式使用 Let's Encrypt 的 shortlived IP 证书，Caddy 自动续期。
+不需要购买域名或向手机导入自签名根证书；证书签发需要公网 80/443 可达。
+IP 模式当前只支持公网 IPv4，私有/保留 IP 和 IPv6 会明确拒绝。
+
+自动部署可设置 `PFEM_ADMIN_PASSWORD_FILE` 指向服务器上权限受限的密码文件，用户名由 `PFEM_ADMIN_USERNAME` 指定（默认 admin）。
+安装器会临时复制为 pfem 用户的 0600 文件，初始化后删除临时副本。密码不会放进进程参数或日志；操作者负责删除源密码文件。
 重复安装相同提交保留管理员和数据库。若检测到其他版本或已有非本项目 Caddy 配置，会停止并要求先审查升级/站点合并。
 脚本不修改 SSH 或主机防火墙，避免意外切断管理连接；云防火墙需允许 80/443 和受限来源的 SSH。
 不要开放 8000；应用只监听 127.0.0.1。
@@ -81,5 +87,7 @@ sudo -u pfem env DATABASE_PATH=/var/lib/private-fixed-egress/controller.db \
 ## 参考
 
 - [Caddy 官方安装说明](https://caddyserver.com/docs/install)
+- [Let's Encrypt 公网 IP 证书正式可用](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability.html)
+- [Caddy ACME issuer 与 profile](https://caddyserver.com/docs/caddyfile/directives/tls#acme)
 - [Caddyfile 入门与自动 HTTPS](https://caddyserver.com/docs/quick-starts/caddyfile)
 - [systemd 服务隔离配置](https://github.com/systemd/systemd/blob/main/man/systemd.exec.xml)

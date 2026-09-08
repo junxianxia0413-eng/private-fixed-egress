@@ -1,6 +1,7 @@
 import argparse
 import getpass
 import os
+from pathlib import Path
 
 from controller.config import ROOT, Settings
 from controller.services.auth import set_administrator
@@ -14,6 +15,10 @@ def main():
     )
     parser.add_argument("--no-env", action="store_true", help="Use externally supplied environment")
     parser.add_argument("--check", action="store_true", help="Check readiness without prompting")
+    parser.add_argument("--username", help="Administrator name for unattended initialization")
+    parser.add_argument(
+        "--password-file", type=Path, help="Read password from a private local file"
+    )
     args = parser.parse_args()
     settings = Settings.from_env()
     if not args.no_env and not args.check and not (ROOT / ".env").exists():
@@ -29,10 +34,18 @@ def main():
     if existing and not args.reset_admin:
         print("Administrator already initialized. No changes made.")
         return 0
-    username = input("Administrator username: ").strip()
-    password = getpass.getpass("Password (14–256 characters): ")
-    if password != getpass.getpass("Repeat password: "):
-        raise ValueError("Passwords do not match")
+    if args.password_file:
+        if not args.username:
+            raise ValueError("--password-file requires --username")
+        if os.name == "posix" and args.password_file.stat().st_mode & 0o077:
+            raise ValueError("Password file must not be accessible to group or other users")
+        username = args.username
+        password = args.password_file.read_text(encoding="utf-8").rstrip("\r\n")
+    else:
+        username = args.username or input("Administrator username: ").strip()
+        password = getpass.getpass("Password (14–256 characters): ")
+        if password != getpass.getpass("Repeat password: "):
+            raise ValueError("Passwords do not match")
     set_administrator(settings, username, password, reset=args.reset_admin)
     print("Administrator saved. All old sessions revoked. Password was not printed or logged.")
     return 0

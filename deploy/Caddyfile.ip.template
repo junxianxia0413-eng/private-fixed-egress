@@ -1,0 +1,12 @@
+# Managed by Private Fixed-Egress Network Manager
+https://__DOMAIN__ {
+    tls {
+        issuer acme {
+            dir https://acme-v02.api.letsencrypt.org/directory
+            profile shortlived
+        }
+    }
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8000
+}
+
