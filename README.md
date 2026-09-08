@@ -26,4 +26,22 @@
 - 不自动购买资源、删除 ISP/Gateway 或重装服务器。
 - 每个完成的模块独立验证并提交；未完成的能力明确标注。
 
-当前状态：初始化开发，尚未完成 MVP 验收。
+## 本地运行（Phase 0）
+
+需要 Python 3.11+：
+
+```sh
+python -m venv .venv
+# Linux: source .venv/bin/activate
+# Windows PowerShell: .venv/Scripts/Activate.ps1
+python -m pip install -r requirements.txt
+python -m uvicorn controller.main:app --host 127.0.0.1 --port 8000
+```
+
+打开 http://127.0.0.1:8000，显示 Private Network / System Online。
+本阶段只供本机验证，不能暴露公网；Phase 1 加入登录和 HTTPS 部署。
+
+测试：`python -m pip install -r requirements-dev.txt`，然后 `python -m pytest`。
+工程说明见 ARCHITECTURE.md、MVP.md、AI-OPERATIONS.md、TECH-STACK.md。
+
+当前状态：Phase 0 项目骨架，尚未完成 MVP 验收。
