@@ -95,3 +95,9 @@ sudo -u pfem env DATABASE_PATH=/var/lib/private-fixed-egress/controller.db \
 - [Caddy ACME issuer 与 profile](https://caddyserver.com/docs/caddyfile/directives/tls#acme)
 - [Caddyfile 入门与自动 HTTPS](https://caddyserver.com/docs/quick-starts/caddyfile)
 - [systemd 服务隔离配置](https://github.com/systemd/systemd/blob/main/man/systemd.exec.xml)
+
+## 已有 Controller 升级
+
+确认没有待执行的 Gateway 任务，检出已审核的新版本后，以 root 执行 `bash deploy/upgrade_controller.sh <旧的完整 SHA> <新的完整 SHA>`。
+脚本准备依赖后暂停服务，备份数据库、secrets 和环境配置至 `/var/backups/pfem/`，切换到 `/opt/pfem-releases/` 版本目录。失败恢复原代码和数据库；秘密目录在升级中不改写。
+旧版本与快照保留，重试遇到已有版本目录时先检查失败原因；不要直接删除快照。

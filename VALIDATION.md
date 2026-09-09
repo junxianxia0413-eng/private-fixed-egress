@@ -7,7 +7,7 @@
 | 范围 | 证据/结果 |
 | --- | --- |
 | Phase 0 | 本地 Python 3.14 virtualenv；FastAPI + SQLite 启动与健康检查通过 |
-| 自动测试 | `python -m pytest -q`：40 passed |
+| 自动测试 | `python -m pytest -q`：61 passed |
 | 代码检查 | Ruff lint、format、Git diff whitespace 检查通过 |
 | 依赖 | 锁定运行/开发依赖；`pip check` 通过 |
 | 持久化 | 应用重建后会话仍有效；退出、到期、重设管理员使旧会话失效 |
@@ -43,3 +43,8 @@ Chrome 自动化默认关闭组件更新时曾出现 CT 校验错误；恢复正
 - 未测试真实 Safari；390px Chrome 视口验证不是 iPhone 实机验收。
 
 Phase 0、Phase 1 完成。整个 MVP 尚未完成。
+
+## Phase 2 开发验证
+
+新增 21 项测试覆盖 v1 数据迁移、凭据引用、鉴权与 CSRF、恢复密钥下载、非法目标、重复注册清理、并发任务互斥、失败信息脱敏、成功后凭据清理、检测过期、重启中断恢复、SSH 主机密钥不匹配及未完成登录保护。
+真实 Debian 12 已校验官方 sing-box 1.14.0 amd64 发行包 SHA-256，并通过初始拒绝代理配置的 check。完整服务部署与现场重复部署仍待本次发布后验证。

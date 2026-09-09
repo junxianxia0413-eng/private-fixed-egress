@@ -1,0 +1,13 @@
+[Unit]
+Description=Private fixed-egress isolated firewall rules
+Before=pfem-gateway.service
+After=network-pre.target ufw.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/pfem-gateway/firewall.nft
+ExecReload=/usr/sbin/nft -f /etc/pfem-gateway/firewall.nft
+
+[Install]
+WantedBy=multi-user.target

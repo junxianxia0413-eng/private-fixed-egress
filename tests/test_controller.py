@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from controller.config import Settings
 from controller.main import create_app
+from controller.models.schema import MIGRATIONS
 from controller.services.auth import digest, set_administrator
 from controller.services.database import backup, connect, migrate
 
@@ -142,7 +143,7 @@ def test_migrations_repeat_without_losing_data(settings):
     migrate(settings.database_path)
     migrate(settings.database_path)
     with connect(settings.database_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert db.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS)
         assert db.execute("SELECT COUNT(*) FROM administrator").fetchone()[0] == 1
         assert db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
 

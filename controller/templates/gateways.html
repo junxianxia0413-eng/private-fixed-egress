@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}服务器 · Private Network{% endblock %}
+{% block body %}
+<div class="dashboard">
+  {% include "sidebar.html" %}
+  <main class="main-content">
+    <header class="topbar"><span>工作空间 / 服务器</span><form action="/logout" method="post">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><span>{{ username }}</span>
+      <button class="quiet" type="submit">退出</button></form></header>
+    <section class="page-heading"><div><p class="eyebrow">GATEWAYS</p><h1>网关服务器</h1>
+      <p class="muted">部署、检测与重启，都在这里完成。</p></div><a class="button-link" href="/gateways">刷新状态</a></section>
+    {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+    <section class="status-banner"><div class="status-icon" aria-hidden="true">i</div><div>
+      <h2>下一步：接入固定 ISP 出口</h2><p>服务器正常只代表网关核心可用。接入 ISP 前，代理流量保持关闭。</p>
+    </div></section>
+    <section class="gateway-grid" aria-label="服务器列表">
+    {% for g in gateways %}
+      <article class="panel gateway-card">
+        <div class="section-heading"><h2>{{ g.name }}</h2><span class="pill {{ 'online' if g.status == 'HEALTHY' else '' }}">
+          {{ {'NEW':'等待部署','DEPLOYING':'正在部署','HEALTHY':'核心正常','DEPLOY_FAILED':'部署失败','CRITICAL':'检测异常','UNKNOWN':'待重新检测','CHECKING':'正在检测'}.get(g.status, g.status) }}</span></div>
+        <p class="muted">{{ g.host }} · {{ g.location or '未填写位置' }}</p>
+        {% if g.last_error %}<p class="error">{{ g.last_error }}</p>{% endif %}
+        <dl class="facts">
+          <div><dt>SSH / 网关服务</dt><dd>{{ '正常' if g.status == 'HEALTHY' else '待验证' }}</dd></div>
+          <div><dt>CPU / 内存</dt><dd>{{ g.health.get('cpu_percent','—') }}% / {{ g.health.get('ram_percent','—') }}%</dd></div>
+          <div><dt>磁盘使用</dt><dd>{{ g.health.get('disk_percent','—') }}%</dd></div>
+          <div><dt>固定出口</dt><dd>尚未接入</dd></div>
+        </dl>
+        <p class="fine">最近检测：{{ g.last_check }}{% if g.stale %} · 状态需要更新{% endif %}</p>
+        {% if g.busy %}<p class="pill">任务处理中，请稍后刷新</p>{% endif %}
+        <div class="gateway-actions">
+          {% for action,label in [('deploy','部署 / 修复'),('check','检测状态'),('restart','重启网关')] %}
+          <form action="/gateways/{{ g.id }}/{{ action }}" method="post"><input type="hidden" name="csrf" value="{{ csrf }}">
+            <button class="quiet" type="submit" {{ 'disabled' if g.busy or (g.status == 'NEW' and action != 'deploy') else '' }}>{{ label }}</button></form>
+          {% endfor %}
+        </div>
+        <details class="connection-details"><summary>连接与恢复</summary><p class="fine">{{ g.health.get('version','尚未安装') }}<br>主机指纹：{{ g.fingerprint }}</p>
+          <form action="/gateways/{{ g.id }}/recovery-key" method="post"><input type="hidden" name="csrf" value="{{ csrf }}">
+            <button class="quiet" type="submit">下载服务器恢复密钥</button></form>
+          <p class="fine">恢复密钥可用于管理员登录，请保存在私人位置。</p>
+        </details>
+      </article>
+    {% else %}<article class="panel"><h2>还没有服务器</h2><p class="muted">添加一台 Debian 12 VPS，即可开始部署。</p></article>{% endfor %}
+    </section>
+    <details class="panel add-gateway" {{ 'open' if not gateways or error else '' }}><summary>＋ 添加 Gateway</summary>
+      <p class="muted">首次安装使用 root 登录。系统验证新密钥后会关闭密码登录，并保留恢复密钥。</p>
+      <form action="/gateways/add" method="post" autocomplete="off">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="form-grid"><label>名称<input name="name" maxlength="64" required placeholder="JP-Tokyo-GW-01"></label>
+          <label>位置<input name="location" maxlength="80" placeholder="Tokyo"></label>
+          <label>公网 IPv4<input name="host" required placeholder="服务器 IP"></label>
+          <label>SSH 端口<input name="ssh_port" type="number" min="1" max="65535" value="22" required></label>
+          <label>首次登录账户<input name="bootstrap_user" value="root" readonly></label>
+          <label>SSH 密码<input name="password" type="password" maxlength="256" autocomplete="new-password"></label></div>
+        <label>或使用 Ed25519 私钥<textarea name="private_key" rows="3" placeholder="使用密码时留空"></textarea></label>
+        <label>服务器 Ed25519 主机公钥<input name="host_key" required placeholder="ssh-ed25519 AAAA..."></label>
+        <p class="fine">主机公钥用于核实连接到正确的服务器，可从服务器控制面板终端读取 /etc/ssh/ssh_host_ed25519_key.pub；只填写密钥类型与内容。</p>
+        <button class="primary" type="submit">保存服务器 <span>→</span></button>
+      </form>
+    </details>
+    <section class="panel history"><div class="section-heading"><h2>部署与检测记录</h2><span class="muted">最近 30 项</span></div>
+      <div class="table-wrap"><table><thead><tr><th>任务</th><th>服务器</th><th>操作</th><th>进度</th><th>结果</th></tr></thead><tbody>
+        {% for j in jobs %}<tr><td>#{{ j.id }}</td><td>{{ j.name }}</td>
+          <td>{{ {'deploy':'部署','check':'检测','restart':'重启'}.get(j.kind,j.kind) }}</td>
+          <td>{{ {'QUEUED':'等待处理','CONNECTING':'连接服务器','INSTALLING':'安装组件','VERIFYING_KEYS':'验证密钥','HARDENING':'保护登录','CHECKING':'检测服务','COMPLETE':'已完成'}.get(j.stage,j.stage) }}</td>
+          <td>{{ {'QUEUED':'排队中','RUNNING':'进行中','SUCCEEDED':'成功','FAILED':'失败'}.get(j.state,j.state) }}{% if j.error %}<br>{{ j.error }}{% endif %}</td></tr>
+        {% else %}<tr><td colspan="5">还没有执行记录</td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+    <footer>检测结果保留 5 分钟有效期 · 定时监测将在后续阶段接入</footer>
+  </main>
+</div>
+{% endblock %}

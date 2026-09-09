@@ -46,7 +46,7 @@ python -m uvicorn controller.main:app --host 127.0.0.1 --port 8000
 
 重置管理员：`python -m scripts.setup --reset-admin`，会撤销全部旧会话。
 在线备份：`python -m scripts.backup`；使用 SQLite backup API，校验完整性并清除备份中的会话。
-备份含密码哈希和后续业务数据，应使用受限权限并保存在 Git 外。
+备份含密码哈希和业务数据，应使用受限权限并保存在 Git 外。接入 Gateway 后，SQLite 备份必须搭配 secrets 目录才能完整恢复，详见 gateways/README.md。
 
 测试：`python -m pip install -r requirements-dev.txt`，然后 `python -m pytest`。
 工程说明见 ARCHITECTURE.md、MVP.md、AI-OPERATIONS.md、TECH-STACK.md。
@@ -57,5 +57,6 @@ Debian 12 部署步骤见 [deploy/README.md](deploy/README.md)。
 当前连接没有 Milestone 创建能力，暂用 Phase 0–10 共 11 个 Issue 跟踪。
 
 当前状态：Phase 0、Phase 1 已完成。Controller 已在真实 Debian 12 VPS 上部署，公网 IP 证书、Chrome/Edge 登录、服务重启恢复与备份验证通过。
-Gateway、ISP、设备、订阅和监控尚未实现；导航明确标为待接入。
+Phase 2 Gateway 已实现自动部署、幂等执行、密钥登录保护、失败记录和真实检测；现场验收进度见 VALIDATION.md。
+ISP、设备、订阅和周期监控尚未实现。服务器操作见 [gateways/README.md](gateways/README.md)。
 尚未完成真实手机固定出口链路验收。

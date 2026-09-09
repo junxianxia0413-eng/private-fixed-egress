@@ -1,17 +1,7 @@
 {% extends "base.html" %}
 {% block body %}
 <div class="dashboard">
-  <aside class="sidebar">
-    <p class="brand">PRIVATE<br>NETWORK<span class="brand-dot">●</span></p>
-    <p class="nav-label">控制台</p>
-    <nav aria-label="主导航">
-      <a class="active" href="/" aria-current="page">Overview <span>概览</span></a>
-      {% for label in ['Devices', 'Subscription Groups', 'ISP Exits', 'Gateways', 'Network Health', 'Alerts', 'History'] %}
-      <div class="nav-pending">{{ label }} <span>待接入</span></div>
-      {% endfor %}
-    </nav>
-    <p class="sidebar-note">固定出口网络管理<br>Controller · Phase 1</p>
-  </aside>
+  {% include "sidebar.html" %}
   <main class="main-content">
     <header class="topbar"><span>工作空间 / 概览</span><form action="/logout" method="post">
       <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -24,13 +14,13 @@
     </div></section>
     <section class="metrics" aria-label="资源状态">
       {% for label in ['Devices', 'Groups', 'ISP Exits', 'Gateways'] %}
-      <article class="panel metric"><p>{{ label }}</p><strong>—</strong><span>尚未接入</span></article>
+      <article class="panel metric"><p>{{ label }}</p><strong>{{ gateway_count if label == 'Gateways' else '—' }}</strong><span>{{ '已登记服务器' if label == 'Gateways' else '尚未接入' }}</span></article>
       {% endfor %}
     </section>
     <section class="content-grid">
-      <article class="panel next-step"><p class="eyebrow">NEXT STEP</p><h2>准备接入第一台 Gateway</h2>
-        <p class="muted">下一阶段将加入 Gateway 自动部署。在真实出口通过验证之前，网络状态保持未知。</p>
-        <ol><li>完成 Controller 域名与 HTTPS 部署</li><li>接入 Debian 12 Gateway VPS</li><li>验证静态 ISP 与两台手机的固定出口</li></ol>
+      <article class="panel next-step"><p class="eyebrow">NEXT STEP</p><h2>管理网关服务器</h2>
+        <p class="muted">Gateway 支持自动部署与真实状态检测。在固定 ISP 出口通过验证之前，手机网络保持关闭。</p>
+        <p><a class="button-link" href="/gateways">进入服务器管理 →</a></p>
         <span class="pill">Network Status · 未检测</span>
       </article>
       <article class="panel"><p class="eyebrow">CONTROLLER</p><h2>服务状态</h2>

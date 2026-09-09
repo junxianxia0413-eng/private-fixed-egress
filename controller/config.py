@@ -48,6 +48,10 @@ class Settings:
     def hostname(self):
         return urlsplit(self.public_url).hostname
 
+    @property
+    def secret_directory(self):
+        return self.database_path.parent / "secrets"
+
     @classmethod
     def from_env(cls):
         values = {**dotenv_values(ROOT / ".env"), **os.environ}

@@ -1,0 +1,25 @@
+[Unit]
+Description=Private fixed-egress Gateway
+After=network-online.target pfem-gateway-firewall.service
+Wants=network-online.target
+Requires=pfem-gateway-firewall.service
+
+[Service]
+User=pfem-proxy
+Group=pfem-proxy
+ExecStartPre=/usr/local/bin/pfem-sing-box check -c /etc/pfem-gateway/config.json
+ExecStart=/usr/local/bin/pfem-sing-box run -c /etc/pfem-gateway/config.json
+Restart=on-failure
+RestartSec=3
+StateDirectory=pfem-gateway
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/pfem-gateway
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -13,7 +13,7 @@ source /etc/os-release
 source_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 target_kind=$(python3 "$source_dir/scripts/deployment.py" validate "$domain")
 revision=$(git -c safe.directory="$source_dir" -C "$source_dir" rev-parse HEAD)
-git -c safe.directory="$source_dir" -C "$source_dir" diff --quiet HEAD -- controller scripts deploy requirements.txt \
+git -c safe.directory="$source_dir" -C "$source_dir" diff --quiet HEAD -- controller scripts deploy gateways requirements.txt \
     || die 'Commit or discard source edits before installing a recorded release.'
 app_dir=/opt/private-fixed-egress
 data_dir=/var/lib/private-fixed-egress
@@ -51,11 +51,11 @@ install -d -m 0700 -o pfem -g pfem "$data_dir" "$data_dir/backups" "$data_dir/se
 install -d -m 0750 -o root -g pfem "$config_dir"
 
 if [[ $source_dir != "$app_dir" ]]; then
-    rsync -a --exclude='__pycache__' --exclude='*.pyc' "$source_dir/controller" "$source_dir/scripts" "$source_dir/deploy" "$app_dir/"
+    rsync -a --exclude='__pycache__' --exclude='*.pyc' "$source_dir/controller" "$source_dir/scripts" "$source_dir/deploy" "$source_dir/gateways" "$app_dir/"
     install -m 0644 "$source_dir/requirements.txt" "$app_dir/requirements.txt"
 fi
-chown -R root:root "$app_dir/controller" "$app_dir/scripts" "$app_dir/deploy"
-chmod -R u=rwX,go=rX "$app_dir/controller" "$app_dir/scripts" "$app_dir/deploy"
+chown -R root:root "$app_dir/controller" "$app_dir/scripts" "$app_dir/deploy" "$app_dir/gateways"
+chmod -R u=rwX,go=rX "$app_dir/controller" "$app_dir/scripts" "$app_dir/deploy" "$app_dir/gateways"
 python3 -m venv "$app_dir/.venv"
 "$app_dir/.venv/bin/python" -m pip install --disable-pip-version-check -r "$app_dir/requirements.txt"
 "$app_dir/.venv/bin/python" -m pip check
