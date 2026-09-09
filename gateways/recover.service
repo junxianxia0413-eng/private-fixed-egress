@@ -1,0 +1,12 @@
+[Unit]
+Description=Recover interrupted fixed-egress configuration before Gateway startup
+Before=pfem-gateway-firewall.service pfem-gateway.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/pfem-gateway-admin recover-config
+
+[Install]
+WantedBy=multi-user.target

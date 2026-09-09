@@ -1,7 +1,8 @@
 [Unit]
 Description=Private fixed-egress isolated firewall rules
 Before=pfem-gateway.service
-After=network-pre.target ufw.service
+After=network-pre.target ufw.service pfem-gateway-recover.service
+Requires=pfem-gateway-recover.service
 
 [Service]
 Type=oneshot

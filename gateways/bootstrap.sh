@@ -4,6 +4,7 @@ set -euo pipefail
 umask 077
 exec 9>/run/lock/pfem-gateway.lock
 flock -n 9 || exit 75
+[[ ! -e /var/lib/pfem-gateway-admin/pending ]] || exit 75
 [[ $(id -u) == 0 ]] || exit 71
 # shellcheck disable=SC1091
 source /etc/os-release
@@ -50,12 +51,18 @@ if [[ ! -f $managed/config.json ]]; then
   install -m 640 -o root -g pfem-proxy initial.json "$managed/config.json"
 fi
 /usr/local/bin/pfem-sing-box check -c "$managed/config.json"
+install -d -m 755 /usr/local/lib/pfem_gateway /usr/local/lib/pfem_gateway/gateways
+install -d -m 700 /var/lib/pfem-gateway-admin
+for module in __init__.py configuration.py transactions.py remote_probe.py; do
+  install -m 644 "$module" "/usr/local/lib/pfem_gateway/gateways/$module"
+done
 install -m 755 remote_admin.py /usr/local/sbin/pfem-gateway-admin
 install -m 755 remote_probe.py /usr/local/sbin/pfem-isp-probe
 install -m 644 gateway.service /etc/systemd/system/pfem-gateway.service
 install -d -m 750 -o pfem-proxy -g pfem-proxy /var/lib/pfem-gateway
 cat > /etc/sudoers.d/pfem-gateway <<'SUDO'
 proxyadmin ALL=(root) NOPASSWD: /usr/local/sbin/pfem-gateway-admin status, /usr/local/sbin/pfem-gateway-admin reconcile, /usr/local/sbin/pfem-gateway-admin restart, /usr/local/sbin/pfem-gateway-admin harden, /usr/local/sbin/pfem-gateway-admin commit-harden
+proxyadmin ALL=(root) NOPASSWD: /usr/local/sbin/pfem-gateway-admin apply-config, /usr/local/sbin/pfem-gateway-admin commit-config
 SUDO
 chmod 440 /etc/sudoers.d/pfem-gateway
 visudo -cf /etc/sudoers.d/pfem-gateway
@@ -73,8 +80,10 @@ NFT
 fi
 nft -c -f "$managed/firewall.nft"
 install -m 644 firewall.service /etc/systemd/system/pfem-gateway-firewall.service
+install -m 644 recover.service /etc/systemd/system/pfem-gateway-recover.service
 systemctl daemon-reload
-systemctl enable pfem-gateway-firewall.service pfem-gateway.service
+systemctl enable pfem-gateway-recover.service pfem-gateway-firewall.service pfem-gateway.service
+systemctl start pfem-gateway-recover.service
 systemctl restart pfem-gateway-firewall.service
 systemctl start pfem-gateway.service
 echo PFEM_BOOTSTRAP_OK

@@ -56,8 +56,9 @@ Debian 12 部署步骤见 [deploy/README.md](deploy/README.md)。
 开发任务见 [GitHub Issues](https://github.com/junxianxia0413-eng/private-fixed-egress/issues)。
 当前连接没有 Milestone 创建能力，暂用 Phase 0–10 共 11 个 Issue 跟踪。
 
-当前状态：Phase 0、Phase 1、Phase 2 已完成。Controller 已在真实 Debian 12 VPS 上部署，公网 IP 证书、Chrome/Edge 登录、服务重启恢复与备份验证通过。
+当前状态：Phase 0、Phase 1、Phase 2、Phase 3 已完成。Controller 已在真实 Debian 12 VPS 上部署，公网 IP 证书、Chrome/Edge 登录、服务重启恢复与备份验证通过。
 Phase 2 Gateway 已实现自动部署、幂等执行、密钥登录保护、失败记录和真实检测；现场验收进度见 VALIDATION.md。
-Phase 3 已加入 ISP 管理、SOCKS5 认证与双源出口检测、固定 IP 身份守卫和每分钟复查，现场上线验证进行中。
-设备、订阅、Exit Group 与完整周期监控尚未实现。服务器操作见 [gateways/README.md](gateways/README.md)。
+Phase 3 已加入 ISP 管理、SOCKS5 认证与双源出口检测、固定 IP 身份守卫和每分钟复查，已通过真实 Gateway 的页面与自动复查验收。
+Phase 4 已加入出口线路页面、持久配置队列、远程备份、完整代理链路验证、失败回滚及断线后的 120 秒自动恢复；现场验证见 VALIDATION.md。
+设备、订阅与完整周期监控尚未实现。服务器操作见 [gateways/README.md](gateways/README.md)。
 尚未完成真实手机固定出口链路验收。

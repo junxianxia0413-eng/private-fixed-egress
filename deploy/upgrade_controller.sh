@@ -63,6 +63,9 @@ try:
         if source.execute("SELECT COUNT(*) FROM isp_jobs WHERE state IN ('QUEUED','RUNNING')").fetchone()[0]:
             raise SystemExit('ISP tasks are pending; resume them before upgrading.')
     target = sqlite3.connect(sys.argv[2])
+    if source.execute("SELECT name FROM sqlite_master WHERE name='exit_jobs'").fetchone():
+        if source.execute("SELECT COUNT(*) FROM exit_jobs WHERE state IN ('QUEUED','RUNNING')").fetchone()[0]:
+            raise SystemExit('Exit configuration tasks are pending; resume them before upgrading.')
     source.backup(target)
     assert target.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
     target.execute('DELETE FROM sessions')

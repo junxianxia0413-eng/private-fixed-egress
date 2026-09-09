@@ -64,4 +64,23 @@ MIGRATIONS = [
             error TEXT NOT NULL DEFAULT ''
         )""",
     ],
+    [
+        """CREATE TABLE exit_groups (
+            id INTEGER PRIMARY KEY CHECK(id BETWEEN 1 AND 1000), name TEXT NOT NULL UNIQUE,
+            gateway_id INTEGER NOT NULL REFERENCES gateways(id),
+            isp_id INTEGER NOT NULL REFERENCES isp_exits(id), secret_ref TEXT NOT NULL,
+            applied INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'NEW',
+            last_error TEXT NOT NULL DEFAULT '', current_exit_ip TEXT, latency_ms REAL,
+            checked_at INTEGER, config_hash TEXT, created_at INTEGER NOT NULL
+        )""",
+        """CREATE TABLE exit_jobs (
+            id INTEGER PRIMARY KEY, group_id INTEGER NOT NULL REFERENCES exit_groups(id),
+            gateway_id INTEGER NOT NULL REFERENCES gateways(id), actor TEXT NOT NULL,
+            transaction_id TEXT NOT NULL UNIQUE, state TEXT NOT NULL DEFAULT 'QUEUED',
+            stage TEXT NOT NULL DEFAULT 'QUEUED', error TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL, finished_at INTEGER
+        )""",
+        """CREATE UNIQUE INDEX one_exit_transaction ON exit_jobs(gateway_id)
+            WHERE state IN ('QUEUED','RUNNING')""",
+    ],
 ]

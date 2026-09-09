@@ -1,8 +1,8 @@
 [Unit]
 Description=Private fixed-egress Gateway
-After=network-online.target pfem-gateway-firewall.service
+After=network-online.target pfem-gateway-firewall.service pfem-gateway-recover.service
 Wants=network-online.target
-Requires=pfem-gateway-firewall.service
+Requires=pfem-gateway-firewall.service pfem-gateway-recover.service
 
 [Service]
 User=pfem-proxy

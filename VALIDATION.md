@@ -37,12 +37,12 @@ Chrome 自动化默认关闭组件更新时曾出现 CT 校验错误；恢复正
 ## 未验证或未实现
 
 - 域名模式的 DNS/证书未在现场执行；本次验证采用无域名的公网 IPv4 模式。
-- Gateway 已完成现场部署；实际 SOCKS5 ISP 测试将在 Phase 3 进行。
-- Exit Group、设备管理、订阅、出口身份守卫、周期监控、完整 History/Alerts 尚待后续阶段。
+- Gateway 已完成现场部署；实际 SOCKS5 ISP 已通过认证、双源出口和后台复查。
+- 设备管理、订阅、完整周期监控与 History/Alerts 尚待后续阶段。
 - 未使用真实 iPhone/Shadowrocket，MVP.md 的现场 Test 01–10 全部待执行。
 - 未测试真实 Safari；390px Chrome 视口验证不是 iPhone 实机验收。
 
-Phase 0、Phase 1、Phase 2 完成。整个 MVP 尚未完成。
+Phase 0、Phase 1、Phase 2、Phase 3 完成。整个 MVP 尚未完成。
 
 ## Phase 2 开发验证
 
@@ -60,10 +60,17 @@ Phase 0、Phase 1、Phase 2 完成。整个 MVP 尚未完成。
 - 网关、独立防火墙、Controller、Caddy 四个服务均设为开机启动；尚未实际重启整台 VPS。
 - Chrome 1440×1100 与 390×844 真实登录/退出、Gateway 页面、Cookie、TLS 校验通过，无页面溢出。
 - 首次升级因 release 依赖目录权限不足失败，自动恢复旧代码及数据库；修复后升级成功，验证了真实回滚路径。
-- 本轮 GitHub 连接返回服务层 HTTP 403，远程同步暂未完成；本地模块及修复均有 Git Commit，部署使用同一提交的 Git bundle。
+- GitHub 连接恢复后已逐个同步模块与修复提交；同步前本地验证提交祖先关系及内容一致，未强制改写主分支。
 
 ## Phase 3 开发验证
 
 - Windows：78 passed，3 个仅 Linux helper 测试跳过；新增 ISP 测试覆盖首次冻结、IP 漂移、SQL 身份不可改写、认证/凭据脱敏、表单保护、队列互斥、分钟调度、重启恢复、过期状态及 SOCKS 协议分片响应。
 - 真实 Gateway 上的预检：两个独立 HTTPS 服务取得相同公网出口，正确凭据通过；仅在测试请求中使用错误密码时返回 AUTH_FAILED，未修改实际保存的凭据。
-- ISP 页面、持久化与分钟后台复查的生产验收等待本次部署。
+- ISP 页面登记、固定身份持久化、分钟后台复查均已在线上通过，自动任务连续成功。Chrome 1440×1100 与 390×844 无横向溢出。
+- Debian Python 3.11 现场 81 passed；GitHub Linux Python 3.11/3.14 CI 全部通过，Actions run 34296200145。
+
+## Phase 4 开发验证
+
+- Windows：90 passed；3 个 Gateway helper 测试以及 6 个配置事务测试只在 Linux 执行。覆盖鉴权/CSRF、凭据脱敏、过期 ISP 拒绝、完整出口匹配才提交、失败状态、重启恢复及拒绝直连的配置生成。
+- Linux 事务测试覆盖候选配置校验失败不影响运行配置、实际出口失败恢复旧配置、防火墙一同恢复、回滚失败保留恢复任务、启动前恢复、提交幂等。
+- 真实服务器配置成功、失败回滚、超时回滚与浏览器验收正在进行；本节不将本地测试视为现场通过。

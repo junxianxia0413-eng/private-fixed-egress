@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}出口线路 · Private Network{% endblock %}
+{% block body %}
+<div class="dashboard">
+  {% include "sidebar.html" %}
+  <main class="main-content">
+    <header class="topbar"><span>工作空间 / 出口线路</span><form action="/logout" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><span>{{ username }}</span><button class="quiet" type="submit">退出</button></form></header>
+    <section class="page-heading"><div><p class="eyebrow">EXIT GROUPS</p><h1>出口线路</h1><p class="muted">一条线路，连接一台网关和一个固定 ISP 出口。</p></div><a class="button-link" href="/exits">刷新状态</a></section>
+    {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+    <section class="status-banner"><div class="status-icon" aria-hidden="true">i</div><div><h2>验证通过后才生效</h2><p>每次更新先保存旧配置，再检测实际出口。验证失败会恢复旧配置；连接中断时，服务器会自动回滚。</p></div></section>
+    <section class="gateway-grid" aria-label="出口线路列表">
+      {% for g in groups %}<article class="panel gateway-card">
+        <div class="section-heading"><h2>{{ g.name }}</h2><span class="pill {{ 'online' if g.status == 'HEALTHY' else '' }}">{{ {'NEW':'等待配置','APPLYING':'正在配置','HEALTHY':'已验证','CRITICAL':'出口异常','UNKNOWN':'待重新验证','CONFIG_FAILED':'配置失败'}.get(g.status,g.status) }}</span></div>
+        {% if g.last_error %}<p class="error">{{ g.last_error }}</p>{% endif %}
+        <dl class="facts"><div><dt>网关</dt><dd>{{ g.gateway_name }}</dd></div><div><dt>固定 ISP</dt><dd>{{ g.isp_name }}</dd></div><div><dt>预期出口 IP</dt><dd>{{ g.expected_exit_ip }}</dd></div><div><dt>线路实际出口</dt><dd>{{ g.current_exit_ip or '尚未取得' }}</dd></div><div><dt>HTTPS 检测耗时</dt><dd>{{ g.latency_ms if g.latency_ms is not none else '—' }} ms</dd></div></dl>
+        <p class="fine">最近验证：{{ g.last_check }}</p>
+        <form action="/exits/{{ g.id }}/apply" method="post" class="gateway-actions"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="quiet" type="submit" {{ 'disabled' if g.busy else '' }}>{{ '配置处理中' if g.busy else '应用并验证' }}</button></form>
+      </article>{% else %}<article class="panel"><h2>创建第一条出口线路</h2><p class="muted">选择已部署的网关与检测正常的 ISP。</p></article>{% endfor %}
+    </section>
+    <details class="panel add-gateway" {{ 'open' if not groups or error else '' }}><summary>＋ 创建出口线路</summary><p class="muted">ISP 必须在最近两分钟内通过检测。创建后自动应用并验证完整线路。</p>
+      <form action="/exits/add" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><div class="form-grid">
+        <label>名称<input name="name" maxlength="64" required placeholder="EXIT-01"></label>
+        <label>网关<select name="gateway_id" required>{% for g in gateways %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}</select></label>
+        <label>固定 ISP<select name="isp_id" required>{% for i in isps %}<option value="{{ i.id }}">{{ i.name }} · {{ i.expected_exit_ip or '尚未检测' }}</option>{% endfor %}</select></label>
+      </div><button class="primary" type="submit" {{ 'disabled' if not gateways or not isps else '' }}>创建并验证 <span>→</span></button></form>
+    </details>
+    <section class="panel history"><div class="section-heading"><h2>配置任务</h2><span class="muted">最近 30 次</span></div><div class="table-wrap"><table><thead><tr><th>任务</th><th>线路</th><th>结果</th><th>说明</th></tr></thead><tbody>
+      {% for j in jobs %}<tr><td>#{{ j.id }}</td><td>{{ j.name }}</td><td>{{ {'QUEUED':'排队中','RUNNING':'处理中','SUCCEEDED':'已完成','FAILED':'失败'}.get(j.state,j.state) }}</td><td>{{ j.error or {'QUEUED':'等待执行','PREPARING':'准备配置','APPLYING':'应用并检测出口','CONFIRMING':'确认配置','COMPLETE':'出口验证通过'}.get(j.stage,j.stage) }}</td></tr>{% else %}<tr><td colspan="4">还没有配置任务</td></tr>{% endfor %}
+    </tbody></table></div></section>
+    <footer>固定 ISP 绑定不会自动切换 · 手机订阅接入将在下一阶段开放</footer>
+  </main>
+</div>
+{% endblock %}

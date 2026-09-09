@@ -23,6 +23,7 @@ def health(client, action="status"):
     # Only return known fields from the remote host, never arbitrary diagnostic data.
     return {
         "probe_available": result.get("probe_available", False),
+        "config_api": result.get("config_api", False),
         **{
             k: result[k]
             for k in (
@@ -59,6 +60,10 @@ def bootstrap(gateway, credentials, managed):
                 "remote_probe.py",
                 "gateway.service",
                 "firewall.service",
+                "configuration.py",
+                "transactions.py",
+                "recover.service",
+                "__init__.py",
             ):
                 with sftp.open(f"{directory}/{name}", "w") as file:
                     file.write((FILES / name).read_bytes())
@@ -84,8 +89,9 @@ def deploy(gateway, store, stage):
     stage("CONNECTING")
     try:
         with connect_gateway(gateway, "proxyadmin", managed) as client:
-            if not health(client, "reconcile")["probe_available"]:
-                raise GatewayError("网关需要安装 ISP 检测组件。")
+            report = health(client, "reconcile")
+            if not report["probe_available"] or not report["config_api"]:
+                raise GatewayError("网关需要更新管理组件。")
     except GatewayError:
         # Recovery key first: a previous attempt may have installed keys already.
         stage("INSTALLING")

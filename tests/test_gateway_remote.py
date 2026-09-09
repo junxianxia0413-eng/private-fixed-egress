@@ -16,6 +16,9 @@ def remote(tmp_path, monkeypatch):
     module = importlib.import_module("gateways.remote_admin")
     monkeypatch.setattr(module, "SSH_CONFIG", tmp_path / "ssh.conf")
     monkeypatch.setattr(module, "SSH_BACKUP", tmp_path / "before.json")
+    config = tmp_path / "config.json"
+    config.write_text('{"outbounds":[]}')
+    monkeypatch.setattr(module, "CONFIG", str(config))
     return module
 
 

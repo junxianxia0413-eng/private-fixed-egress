@@ -67,6 +67,7 @@ def status():
     disk = shutil.disk_usage("/")
     return {
         "probe_available": Path("/usr/local/sbin/pfem-isp-probe").is_file(),
+        "config_api": Path("/usr/local/lib/pfem_gateway/gateways/transactions.py").is_file(),
         "healthy": active and firewall and valid and port and blocked,
         "ssh_key_only": key_only,
         "firewall": firewall,
@@ -79,7 +80,7 @@ def status():
         "disk_percent": round(100 * disk.used / disk.total, 1),
         "version": command([CORE, "version"]).stdout.splitlines()[0],
         "checked_at": int(time.time()),
-        "isp_bound": False,
+        "isp_bound": bool(json.loads(Path(CONFIG).read_text()).get("outbounds")),
     }
 
 
@@ -142,11 +143,20 @@ def main():
         "harden",
         "commit-harden",
         "rollback-harden",
+        "apply-config",
+        "commit-config",
+        "rollback-config",
+        "recover-config",
     }:
         return 64
     if not Path("/etc/pfem-gateway/managed-v1").is_file():
         return 65
     action = sys.argv[1]
+    if action in {"apply-config", "commit-config", "rollback-config", "recover-config"}:
+        sys.path.insert(0, "/usr/local/lib/pfem_gateway")
+        from gateways.transactions import handle
+
+        return handle(action)
     if action != "status":
         with open("/run/lock/pfem-gateway.lock", "w") as lock:
             try:
