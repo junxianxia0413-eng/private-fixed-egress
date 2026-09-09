@@ -5,3 +5,5 @@
 
 .gateway-grid,.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin:24px 0}.gateway-card{overflow-wrap:anywhere}.gateway-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}.gateway-actions form{margin:0}.button-link{display:inline-block;padding:10px 16px;border:1px solid var(--border);border-radius:8px;background:white;color:var(--accent);text-decoration:none}.add-gateway summary,.connection-details summary{cursor:pointer;font-weight:600}.add-gateway>p{margin-top:16px}.add-gateway .primary{max-width:340px}.connection-details{margin-top:18px}.connection-details button{margin-top:14px}textarea{width:100%;padding:12px;border:1px solid #bdcbd1;border-radius:8px;margin:6px 0 18px;font:inherit}button:disabled{opacity:.5;cursor:wait}.sidebar a{background:transparent}.sidebar a.active{background:#27454b}
 @media(max-width:700px){.gateway-grid,.form-grid{grid-template-columns:1fr}.sidebar nav{display:flex;flex-direction:row;margin-top:15px}.sidebar .nav-pending{display:none}.sidebar nav a{flex:1}.gateway-actions .quiet{font-size:13px;padding:8px}.gateway-card .facts dd{text-align:right}}
+
+.history table{min-width:580px}

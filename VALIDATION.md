@@ -37,14 +37,27 @@ Chrome 自动化默认关闭组件更新时曾出现 CT 校验错误；恢复正
 ## 未验证或未实现
 
 - 域名模式的 DNS/证书未在现场执行；本次验证采用无域名的公网 IPv4 模式。
-- 未接入或部署 Gateway，未输入/测试任何实际 SOCKS5 ISP。
+- Gateway 已完成现场部署；实际 SOCKS5 ISP 测试将在 Phase 3 进行。
 - Exit Group、设备管理、订阅、出口身份守卫、周期监控、完整 History/Alerts 尚待后续阶段。
 - 未使用真实 iPhone/Shadowrocket，MVP.md 的现场 Test 01–10 全部待执行。
 - 未测试真实 Safari；390px Chrome 视口验证不是 iPhone 实机验收。
 
-Phase 0、Phase 1 完成。整个 MVP 尚未完成。
+Phase 0、Phase 1、Phase 2 完成。整个 MVP 尚未完成。
 
 ## Phase 2 开发验证
 
 新增 21 项测试覆盖 v1 数据迁移、凭据引用、鉴权与 CSRF、恢复密钥下载、非法目标、重复注册清理、并发任务互斥、失败信息脱敏、成功后凭据清理、检测过期、重启中断恢复、SSH 主机密钥不匹配及未完成登录保护。
-真实 Debian 12 已校验官方 sing-box 1.14.0 amd64 发行包 SHA-256，并通过初始拒绝代理配置的 check。完整服务部署与现场重复部署仍待本次发布后验证。
+真实 Debian 12 已校验官方 sing-box 1.14.0 amd64 发行包 SHA-256，并通过初始拒绝代理配置的 check。完整服务部署和重复部署现已通过现场验证。
+
+### Phase 2 现场结果（2026-09-09 UTC）
+
+- Windows Python 3.14 与 Debian 12 Python 3.11：均 61 项测试通过；Ruff、ShellCheck 通过。
+- 浏览器登记服务器、保存恢复密钥、提交部署任务成功；真实 sing-box 1.14.0 服务启动，SSH 密钥认证和 CPU/RAM/磁盘采样正常。
+- 重复部署前后配置、防火墙文件、root 与 proxyadmin 公钥文件的 SHA-256 完全相同。
+- 主动停止网关后检测任务失败，显示 CRITICAL；控制台重启网关后恢复 HEALTHY，PID 已变化。
+- root 密码认证被拒绝；恢复密钥可登录；proxyadmin 无法使用 sudo 执行任意命令。
+- 核心 SOCKS CONNECT 被拒绝；同一外部目标 root 可连接，pfem-proxy 用户被 nftables 阻断。
+- 网关、独立防火墙、Controller、Caddy 四个服务均设为开机启动；尚未实际重启整台 VPS。
+- Chrome 1440×1100 与 390×844 真实登录/退出、Gateway 页面、Cookie、TLS 校验通过，无页面溢出。
+- 首次升级因 release 依赖目录权限不足失败，自动恢复旧代码及数据库；修复后升级成功，验证了真实回滚路径。
+- 本轮 GitHub 连接返回服务层 HTTP 403，远程同步暂未完成；本地模块及修复均有 Git Commit，部署使用同一提交的 Git bundle。

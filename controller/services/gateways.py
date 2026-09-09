@@ -210,8 +210,12 @@ class GatewayWorker:
                 db.execute("SELECT * FROM gateways WHERE id=?", (job["gateway_id"],)).fetchone()
             )
             db.execute(
-                "UPDATE gateway_jobs SET state='RUNNING',started_at=? WHERE id=?",
-                (int(time.time()), job["id"]),
+                "UPDATE gateway_jobs SET state='RUNNING',stage=?,started_at=? WHERE id=?",
+                (
+                    "CONNECTING" if job["kind"] == "deploy" else "CHECKING",
+                    int(time.time()),
+                    job["id"],
+                ),
             )
             db.execute(
                 "UPDATE gateways SET status=?,last_error='' WHERE id=?",

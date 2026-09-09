@@ -25,6 +25,14 @@ def command(args, timeout=15):
 def status():
     active = command(["/usr/bin/systemctl", "is-active", SERVICE]).returncode == 0
     firewall = command(["/usr/bin/systemctl", "is-active", "pfem-gateway-firewall"]).returncode == 0
+    rules = command(["/usr/sbin/nft", "-j", "list", "table", "inet", "pfem_guard"])
+    try:
+        entries = json.loads(rules.stdout)["nftables"]
+        chains = {entry["chain"]["name"] for entry in entries if "chain" in entry}
+        firewall = firewall and rules.returncode == 0 and {"input", "output"} <= chains
+        firewall = firewall and sum("rule" in entry for entry in entries) >= 3
+    except (ValueError, KeyError, TypeError):
+        firewall = False
     effective = command(["/usr/sbin/sshd", "-T"]).stdout.splitlines()
     key_only = (
         "passwordauthentication no" in effective and "kbdinteractiveauthentication no" in effective
@@ -160,6 +168,13 @@ def main():
                 if command([CORE, "check", "-c", CONFIG]).returncode:
                     return 68
                 verb = "restart" if action == "restart" else "start"
+                if (
+                    action == "reconcile"
+                    and command(
+                        ["/usr/bin/systemctl", "restart", "pfem-gateway-firewall.service"]
+                    ).returncode
+                ):
+                    return 69
                 if command(["/usr/bin/systemctl", verb, SERVICE]).returncode:
                     return 69
     result = status()
