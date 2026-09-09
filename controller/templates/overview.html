@@ -14,7 +14,7 @@
     </div></section>
     <section class="metrics" aria-label="资源状态">
       {% for label in ['Devices', 'Groups', 'ISP Exits', 'Gateways'] %}
-      <article class="panel metric"><p>{{ label }}</p><strong>{{ gateway_count if label == 'Gateways' else '—' }}</strong><span>{{ '已登记服务器' if label == 'Gateways' else '尚未接入' }}</span></article>
+      <article class="panel metric"><p>{{ label }}</p><strong>{{ gateway_count if label == 'Gateways' else isp_count if label == 'ISP Exits' else '—' }}</strong><span>{{ '已登记' if label in ['Gateways','ISP Exits'] else '尚未接入' }}</span></article>
       {% endfor %}
     </section>
     <section class="content-grid">

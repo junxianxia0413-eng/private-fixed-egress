@@ -41,3 +41,7 @@ Gateway 客户端入口协议在 Phase 2/4 根据 sing-box 与 Shadowrocket 支�
 共享订阅可供两台手机使用，但设备绑定只是管理记录，不能仅凭共享链接强制识别两台物理设备。
 HTTP 探测失败率不可冒充网络层丢包；Phase 8 需明确测量协议、采样数和窗口。
 禁止将 mock 测试通过视为两台 iPhone 固定出口链路已验收。
+
+## Phase 3 ISP 检测
+
+isp_exits、isp_jobs、isp_checks 保存资源、持久队列与检测证据。秘密文件通过引用访问，expected_exit_ip 由数据库 trigger 冻结。单 worker 每分钟调度已首次检测过的 ISP，通过 Gateway 上的固定探针执行 SOCKS5 认证和双源 HTTPS 出口确认。

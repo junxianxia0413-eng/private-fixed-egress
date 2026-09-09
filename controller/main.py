@@ -9,6 +9,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from controller.api.dashboard import router
 from controller.api.gateways import router as gateways_router
+from controller.api.isps import router as isps_router
 from controller.config import ROOT, Settings
 from controller.services.database import connect, migrate
 from controller.services.gateways import GatewayWorker
@@ -107,6 +108,7 @@ def create_app(settings: Settings | None = None):
     app.mount("/static", StaticFiles(directory=ROOT / "controller/static"), name="static")
     app.include_router(router)
     app.include_router(gateways_router)
+    app.include_router(isps_router)
     return app
 
 

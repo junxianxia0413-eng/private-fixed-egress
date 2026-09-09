@@ -66,6 +66,7 @@ def status():
     }
     disk = shutil.disk_usage("/")
     return {
+        "probe_available": Path("/usr/local/sbin/pfem-isp-probe").is_file(),
         "healthy": active and firewall and valid and port and blocked,
         "ssh_key_only": key_only,
         "firewall": firewall,

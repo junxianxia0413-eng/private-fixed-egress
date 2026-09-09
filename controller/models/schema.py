@@ -36,4 +36,32 @@ MIGRATIONS = [
         """CREATE UNIQUE INDEX one_gateway_job ON gateway_jobs(gateway_id)
             WHERE state IN ('QUEUED','RUNNING')""",
     ],
+    [
+        """CREATE TABLE isp_exits (
+            id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, host TEXT NOT NULL,
+            port INTEGER NOT NULL CHECK(port BETWEEN 1 AND 65535), secret_ref TEXT NOT NULL,
+            gateway_id INTEGER NOT NULL REFERENCES gateways(id), country TEXT NOT NULL DEFAULT '',
+            city TEXT NOT NULL DEFAULT '', provider TEXT NOT NULL DEFAULT '', expires_on TEXT,
+            expected_exit_ip TEXT, current_exit_ip TEXT, latency_ms REAL,
+            status TEXT NOT NULL DEFAULT 'NEW', last_error TEXT NOT NULL DEFAULT '',
+            tested_at INTEGER, created_at INTEGER NOT NULL
+        )""",
+        """CREATE TRIGGER immutable_exit_identity BEFORE UPDATE OF expected_exit_ip ON isp_exits
+            WHEN OLD.expected_exit_ip IS NOT NULL
+            AND NEW.expected_exit_ip IS NOT OLD.expected_exit_ip
+            BEGIN SELECT RAISE(ABORT, 'Exit identity is immutable'); END""",
+        """CREATE TABLE isp_jobs (
+            id INTEGER PRIMARY KEY, isp_id INTEGER NOT NULL REFERENCES isp_exits(id),
+            actor TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'QUEUED',
+            error TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, finished_at INTEGER
+        )""",
+        """CREATE UNIQUE INDEX one_isp_job ON isp_jobs(isp_id)
+            WHERE state IN ('QUEUED','RUNNING')""",
+        """CREATE TABLE isp_checks (
+            id INTEGER PRIMARY KEY, isp_id INTEGER NOT NULL REFERENCES isp_exits(id),
+            gateway_id INTEGER NOT NULL REFERENCES gateways(id), occurred_at INTEGER NOT NULL,
+            status TEXT NOT NULL, expected_ip TEXT, observed_ip TEXT, latency_ms REAL,
+            error TEXT NOT NULL DEFAULT ''
+        )""",
+    ],
 ]

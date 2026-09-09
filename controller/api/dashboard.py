@@ -142,6 +142,7 @@ def overview(request: Request):
     settings = request.app.state.settings
     with connect(settings.database_path) as db:
         version = db.execute("PRAGMA user_version").fetchone()[0]
+        isp_count = db.execute("SELECT COUNT(*) FROM isp_exits").fetchone()[0]
         gateway_count = db.execute("SELECT COUNT(*) FROM gateways").fetchone()[0]
         events = [
             dict(row)
@@ -161,6 +162,7 @@ def overview(request: Request):
             "username": session["username"],
             "version": version,
             "gateway_count": gateway_count,
+            "isp_count": isp_count,
             "events": events,
             "environment": settings.environment,
         },

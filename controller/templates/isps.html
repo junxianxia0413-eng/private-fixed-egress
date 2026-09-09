@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}固定出口 · Private Network{% endblock %}
+{% block body %}
+<div class="dashboard">
+  {% include "sidebar.html" %}
+  <main class="main-content">
+    <header class="topbar"><span>工作空间 / 固定出口</span><form action="/logout" method="post">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><span>{{ username }}</span><button class="quiet" type="submit">退出</button></form></header>
+    <section class="page-heading"><div><p class="eyebrow">ISP EXITS</p><h1>固定出口</h1><p class="muted">认证、真实出口与连接状态，每分钟自动复查。</p></div><a class="button-link" href="/isps">刷新状态</a></section>
+    {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+    <section class="status-banner"><div class="status-icon" aria-hidden="true">i</div><div>
+      <h2>固定出口身份保护</h2><p>首次检测成功后锁定出口 IP。发现变化立即标记异常，保留原始 IP，不自动更换 ISP。</p>
+    </div></section>
+    <section class="gateway-grid" aria-label="ISP 列表">
+    {% for isp in isps %}<article class="panel gateway-card">
+      <div class="section-heading"><h2>{{ isp.name }}</h2><span class="pill {{ 'online' if isp.status == 'HEALTHY' else '' }}">
+        {{ {'NEW':'等待检测','CHECKING':'正在检测','HEALTHY':'出口正常','CRITICAL':'出口异常','UNKNOWN':'待重新检测'}.get(isp.status,isp.status) }}</span></div>
+      <p class="muted">SOCKS5 · {{ isp.provider or '服务商未填写' }}</p>
+      {% if isp.last_error %}<p class="error">{{ isp.last_error }}</p>{% endif %}
+      <dl class="facts"><div><dt>固定出口 IP</dt><dd>{{ isp.expected_exit_ip or '首次成功后确定' }}</dd></div>
+        <div><dt>当前检测 IP</dt><dd>{{ isp.current_exit_ip or '尚未取得' }}</dd></div>
+        <div><dt>HTTPS 检测耗时</dt><dd>{{ isp.latency_ms if isp.latency_ms is not none else '—' }} ms</dd></div>
+        <div><dt>检测网关</dt><dd>{{ isp.gateway_name }}</dd></div>
+        <div><dt>国家 / 城市</dt><dd>{{ isp.country or '未填写' }} / {{ isp.city or '未填写' }}</dd></div>
+        <div><dt>到期日</dt><dd>{{ isp.expires_on or '待补充' }}{% if isp.days_left is not none %}<br>剩余 {{ isp.days_left }} 天{% endif %}</dd></div></dl>
+      <p class="fine">最近检测：{{ isp.last_test }}{% if isp.stale %} · 状态需要更新{% endif %}</p>
+      <form action="/isps/{{ isp.id }}/test" method="post" class="gateway-actions"><input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="quiet" type="submit" {{ 'disabled' if isp.busy else '' }}>{{ '检测处理中' if isp.busy else '立即检测' }}</button></form>
+    </article>{% else %}<article class="panel"><h2>添加第一个静态 ISP</h2><p class="muted">准备好商家的 SOCKS5 连接信息，即可测试真实出口。</p></article>{% endfor %}
+    </section>
+    <details class="panel add-gateway" {{ 'open' if not isps or error else '' }}><summary>＋ 添加 ISP</summary>
+      <p class="muted">保存后自动测试。凭据仅用于服务器连接，不会显示在页面或订阅中。</p>
+      <form action="/isps/add" method="post" autocomplete="off"><input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="form-grid">
+          <label>名称<input name="name" maxlength="64" required placeholder="ISP-01"></label>
+          <label>检测网关<select name="gateway_id" required>{% for g in gateways %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}</select></label>
+          <label>代理地址<input name="host" required placeholder="IP 或域名"></label><label>端口<input name="port" type="number" min="1" max="65535" required></label>
+          <label>用户名<input name="username" required autocomplete="off"></label><label>密码<input name="password" type="password" required autocomplete="new-password"></label>
+          <label>国家（可选）<input name="country" maxlength="80"></label><label>城市（可选）<input name="city" maxlength="80"></label>
+          <label>服务商（可选）<input name="provider" maxlength="80"></label><label>到期日（可选）<input name="expires_on" type="date"></label>
+        </div>
+        <label>商家提供的固定出口 IP（可选）<input name="expected_exit_ip" placeholder="留空时，以首次成功检测的 IP 为准"></label>
+        <button class="primary" type="submit" {{ 'disabled' if not gateways else '' }}>保存并检测 <span>→</span></button>
+        {% if not gateways %}<p class="fine">请先添加网关服务器。</p>{% endif %}
+      </form>
+    </details>
+    <section class="panel history"><div class="section-heading"><h2>出口检测记录</h2><span class="muted">最近 30 次</span></div>
+      <div class="table-wrap"><table><thead><tr><th>检测</th><th>ISP</th><th>固定 IP</th><th>实际 IP</th><th>结果</th></tr></thead><tbody>
+        {% for c in checks %}<tr><td>#{{ c.id }}</td><td>{{ c.name }}</td><td>{{ c.expected_ip or '—' }}</td><td>{{ c.observed_ip or '未取得' }}</td><td>{{ '正常' if c.status == 'HEALTHY' else '异常' }}{% if c.error %}<br>{{ c.error }}{% endif %}</td></tr>
+        {% else %}<tr><td colspan="5">还没有检测记录</td></tr>{% endfor %}
+      </tbody></table></div>
+    </section><footer>检测经过所选网关与 ISP · 两个独立 HTTPS 服务核对出口 · 手机接入将在后续阶段完成</footer>
+  </main>
+</div>
+{% endblock %}

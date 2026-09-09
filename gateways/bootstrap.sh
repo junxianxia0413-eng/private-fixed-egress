@@ -51,6 +51,7 @@ if [[ ! -f $managed/config.json ]]; then
 fi
 /usr/local/bin/pfem-sing-box check -c "$managed/config.json"
 install -m 755 remote_admin.py /usr/local/sbin/pfem-gateway-admin
+install -m 755 remote_probe.py /usr/local/sbin/pfem-isp-probe
 install -m 644 gateway.service /etc/systemd/system/pfem-gateway.service
 install -d -m 750 -o pfem-proxy -g pfem-proxy /var/lib/pfem-gateway
 cat > /etc/sudoers.d/pfem-gateway <<'SUDO'

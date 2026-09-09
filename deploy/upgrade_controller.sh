@@ -59,6 +59,9 @@ try:
     if source.execute("SELECT name FROM sqlite_master WHERE name='gateway_jobs'").fetchone():
         if source.execute("SELECT COUNT(*) FROM gateway_jobs WHERE state IN ('QUEUED','RUNNING')").fetchone()[0]:
             raise SystemExit('Gateway tasks are pending; resume them before upgrading.')
+    if source.execute("SELECT name FROM sqlite_master WHERE name='isp_jobs'").fetchone():
+        if source.execute("SELECT COUNT(*) FROM isp_jobs WHERE state IN ('QUEUED','RUNNING')").fetchone()[0]:
+            raise SystemExit('ISP tasks are pending; resume them before upgrading.')
     target = sqlite3.connect(sys.argv[2])
     source.backup(target)
     assert target.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'

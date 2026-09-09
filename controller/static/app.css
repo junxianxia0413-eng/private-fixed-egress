@@ -7,3 +7,5 @@
 @media(max-width:700px){.gateway-grid,.form-grid{grid-template-columns:1fr}.sidebar nav{display:flex;flex-direction:row;margin-top:15px}.sidebar .nav-pending{display:none}.sidebar nav a{flex:1}.gateway-actions .quiet{font-size:13px;padding:8px}.gateway-card .facts dd{text-align:right}}
 
 .history table{min-width:580px}
+
+select{width:100%;font:inherit;padding:12px;border:1px solid #bdcbd1;border-radius:8px;margin:6px 0 18px;background:white}@media(max-width:700px){.sidebar nav{flex-wrap:wrap}.sidebar nav a{min-width:140px}}

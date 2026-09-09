@@ -22,22 +22,25 @@ def health(client, action="status"):
         raise GatewayError("网关核心检测未通过；请检查服务、配置和本机代理端口。")
     # Only return known fields from the remote host, never arbitrary diagnostic data.
     return {
-        k: result[k]
-        for k in (
-            "healthy",
-            "service",
-            "config_valid",
-            "proxy_port",
-            "cpu_percent",
-            "ram_percent",
-            "disk_percent",
-            "version",
-            "checked_at",
-            "isp_bound",
-            "egress_blocked",
-            "ssh_key_only",
-            "firewall",
-        )
+        "probe_available": result.get("probe_available", False),
+        **{
+            k: result[k]
+            for k in (
+                "healthy",
+                "service",
+                "config_valid",
+                "proxy_port",
+                "cpu_percent",
+                "ram_percent",
+                "disk_percent",
+                "version",
+                "checked_at",
+                "isp_bound",
+                "egress_blocked",
+                "ssh_key_only",
+                "firewall",
+            )
+        },
     }
 
 
@@ -50,7 +53,13 @@ def bootstrap(gateway, credentials, managed):
         if not re.fullmatch(r"/tmp/pfem-bootstrap\.[a-zA-Z0-9]{8}", directory):
             raise GatewayError("远程临时目录异常，已停止部署。")
         with client.open_sftp() as sftp:
-            for name in ("bootstrap.sh", "remote_admin.py", "gateway.service", "firewall.service"):
+            for name in (
+                "bootstrap.sh",
+                "remote_admin.py",
+                "remote_probe.py",
+                "gateway.service",
+                "firewall.service",
+            ):
                 with sftp.open(f"{directory}/{name}", "w") as file:
                     file.write((FILES / name).read_bytes())
             for name, content in {
@@ -75,7 +84,8 @@ def deploy(gateway, store, stage):
     stage("CONNECTING")
     try:
         with connect_gateway(gateway, "proxyadmin", managed) as client:
-            health(client, "reconcile")
+            if not health(client, "reconcile")["probe_available"]:
+                raise GatewayError("网关需要安装 ISP 检测组件。")
     except GatewayError:
         # Recovery key first: a previous attempt may have installed keys already.
         stage("INSTALLING")
