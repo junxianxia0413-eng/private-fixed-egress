@@ -24,6 +24,8 @@ chmod -R u=rwX,go=rX "$release"
 python3 -m venv "$release/.venv"
 "$release/.venv/bin/python" -m pip install --disable-pip-version-check -r "$release/requirements.txt"
 "$release/.venv/bin/python" -m pip check
+# The preparation umask is private; the unprivileged service needs directory traversal.
+chmod -R u=rwX,go=rX "$release"
 printf '%s\n' "$new" > "$release/.installed-revision"
 stamp=$(date -u +%Y%m%dT%H%M%S)
 snapshot=/var/backups/pfem/controller-$stamp
