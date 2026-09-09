@@ -42,7 +42,7 @@ Chrome 自动化默认关闭组件更新时曾出现 CT 校验错误；恢复正
 - 未使用真实 iPhone/Shadowrocket，MVP.md 的现场 Test 01–10 全部待执行。
 - 未测试真实 Safari；390px Chrome 视口验证不是 iPhone 实机验收。
 
-Phase 0、Phase 1、Phase 2、Phase 3 完成。整个 MVP 尚未完成。
+Phase 0–4 完成。整个 MVP 尚未完成。
 
 ## Phase 2 开发验证
 
@@ -73,4 +73,8 @@ Phase 0、Phase 1、Phase 2、Phase 3 完成。整个 MVP 尚未完成。
 
 - Windows：90 passed；3 个 Gateway helper 测试以及 6 个配置事务测试只在 Linux 执行。覆盖鉴权/CSRF、凭据脱敏、过期 ISP 拒绝、完整出口匹配才提交、失败状态、重启恢复及拒绝直连的配置生成。
 - Linux 事务测试覆盖候选配置校验失败不影响运行配置、实际出口失败恢复旧配置、防火墙一同恢复、回滚失败保留恢复任务、启动前恢复、提交幂等。
-- 真实服务器配置成功、失败回滚、超时回滚与浏览器验收正在进行；本节不将本地测试视为现场通过。
+- Debian 99 passed；Ruff、格式检查、ShellCheck、真实 sing-box/nftables 语法校验通过。GitHub Python 3.11/3.14 CI run 34360821445 成功。
+- 真实页面创建 EXIT-01，两个 HTTPS 服务经过网关核心和 ISP 得到相同固定出口；桌面和 390px 页面无溢出。
+- 分别注入错误代理密码和错误预期 IP，均失败并恢复旧配置，原出口重新验证成功；未修改已保存的 ISP 凭据及身份。
+- 故意不确认修改后的本地探测凭据，远程 120 秒定时器触发回滚，核心配置、防火墙、manifest 哈希全部恢复，旧出口复核成功。
+- 五个服务 active 且 boot enabled；完整整机重启和手机测试仍未执行。
