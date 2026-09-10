@@ -91,4 +91,24 @@ MIGRATIONS = [
             created_at INTEGER NOT NULL
         )""",
     ],
+    [
+        """CREATE TABLE subscription_groups (
+            id INTEGER PRIMARY KEY CHECK(id BETWEEN 1 AND 1000), name TEXT NOT NULL UNIQUE,
+            exit_id INTEGER NOT NULL REFERENCES exit_groups(id),
+            state TEXT NOT NULL DEFAULT 'PENDING',
+            created_at INTEGER NOT NULL
+        )""",
+        """CREATE TABLE group_devices (
+            device_id INTEGER PRIMARY KEY REFERENCES devices(id),
+            group_id INTEGER NOT NULL REFERENCES subscription_groups(id),
+            slot INTEGER NOT NULL CHECK(slot IN (1,2)), UNIQUE(group_id,slot)
+        )""",
+        """CREATE TABLE group_confirmations (
+            token_hash TEXT PRIMARY KEY,
+            group_id INTEGER NOT NULL REFERENCES subscription_groups(id),
+            old_exit_id INTEGER NOT NULL REFERENCES exit_groups(id),
+            new_exit_id INTEGER NOT NULL REFERENCES exit_groups(id), actor TEXT NOT NULL,
+            expires_at INTEGER NOT NULL
+        )""",
+    ],
 ]

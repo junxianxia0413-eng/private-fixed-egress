@@ -82,3 +82,7 @@ Phase 0–4 完成。整个 MVP 尚未完成。
 ## Phase 5 设备管理
 
 设备登记、编辑、唯一名称、输入长度、鉴权/CSRF、HTML 转义及修改历史已实现。Windows 全套 92 passed / 9 Linux-only skipped；生产界面验收将在后续部署中执行。
+
+## Phase 6 订阅组
+
+两台不同设备绑定、设备唯一归属、同网关出口切换的一次性确认与旧/新 ISP 审计通过测试。Windows 95 passed / 9 Linux-only skipped。此阶段登记不开放手机入口；待 Phase 7 生成并验证订阅。

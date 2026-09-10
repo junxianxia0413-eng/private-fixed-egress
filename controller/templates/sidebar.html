@@ -7,7 +7,8 @@
     <a class="{{ 'active' if active == 'gateways' else '' }}" href="/gateways">Gateways <span>服务器</span></a>
     <a class="{{ 'active' if active == 'isps' else '' }}" href="/isps">ISP Exits <span>固定出口</span></a>
     <a class="{{ 'active' if active == 'exits' else '' }}" href="/exits">Exit Groups <span>出口线路</span></a>
-    {% for label in ['Subscription Groups', 'Network Health', 'Alerts', 'History'] %}
+    <a class="{{ 'active' if active == 'groups' else '' }}" href="/groups">Groups <span>订阅组</span></a>
+    {% for label in ['Network Health', 'Alerts', 'History'] %}
     <div class="nav-pending">{{ label }} <span>待接入</span></div>
     {% endfor %}
   </nav>
