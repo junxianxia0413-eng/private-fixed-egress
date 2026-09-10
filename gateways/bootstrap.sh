@@ -3,7 +3,7 @@
 set -euo pipefail
 umask 077
 exec 9>/run/lock/pfem-gateway.lock
-flock -n 9 || exit 75
+flock -w 65 9 || exit 75
 [[ ! -e /var/lib/pfem-gateway-admin/pending ]] || exit 75
 [[ $(id -u) == 0 ]] || exit 71
 # shellcheck disable=SC1091
