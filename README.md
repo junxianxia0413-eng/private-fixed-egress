@@ -56,9 +56,10 @@ Debian 12 部署步骤见 [deploy/README.md](deploy/README.md)。
 开发任务见 [GitHub Issues](https://github.com/junxianxia0413-eng/private-fixed-egress/issues)。
 当前连接没有 Milestone 创建能力，暂用 Phase 0–10 共 11 个 Issue 跟踪。
 
-当前状态：Phase 0–4 已完成。Controller 已在真实 Debian 12 VPS 上部署，公网 IP 证书、Chrome/Edge 登录、服务重启恢复与备份验证通过。
-Phase 2 Gateway 已实现自动部署、幂等执行、密钥登录保护、失败记录和真实检测；现场验收进度见 VALIDATION.md。
-Phase 3 已加入 ISP 管理、SOCKS5 认证与双源出口检测、固定 IP 身份守卫和每分钟复查，已通过真实 Gateway 的页面与自动复查验收。
-Phase 4 已加入出口线路页面、持久配置队列、远程备份、完整代理链路验证、失败回滚及断线后的 120 秒自动恢复；现场验证见 VALIDATION.md。
-设备、订阅与完整周期监控尚未实现。服务器操作见 [gateways/README.md](gateways/README.md)。
-尚未完成真实手机固定出口链路验收。
+当前状态：Phase 0–8 已完成并部署到真实 Debian 12 VPS。控制台、Gateway、静态 SOCKS5 ISP、出口身份守卫、两台设备订阅组、Shadowrocket 单节点订阅、入口租约和网络监控均已通过自动化与生产验证。
+
+最简单的使用流程是：登录控制台 → 打开“设备”登记两台手机 → 打开“订阅组”生成链接 → 两台 iPhone 在 Shadowrocket 导入同一个链接 → 选择该节点并打开全局代理。两台手机应看到同一个固定出口 IP。详细手机步骤和当前私密链接保存在部署输出目录的 `手机接入说明.md`，不会提交到 Git。
+
+“网络监控”页面会分别显示服务器到 ISP 代理入口的 TCP 延迟、抖动、ICMP 信息、服务通过率和资源使用率。它不等于手机到服务器的实际延迟，也不把网站完整响应时间冒充线路延迟；手机体验仍需用真实 Wi-Fi/蜂窝网络验收。
+
+服务器操作见 [gateways/README.md](gateways/README.md)，测试证据与未完成的真实手机验收见 [VALIDATION.md](VALIDATION.md)。目前仍保持开放的验收项是两台 iPhone 实机导入、同出口、IPv6/DNS 和手机侧延迟记录。
