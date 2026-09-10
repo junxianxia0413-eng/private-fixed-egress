@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
 from controller.config import ROOT
+from controller.services import alerts
 from controller.services.auth import (
     authenticate,
     create_session,
@@ -144,6 +145,11 @@ def overview(request: Request):
         version = db.execute("PRAGMA user_version").fetchone()[0]
         isp_count = db.execute("SELECT COUNT(*) FROM isp_exits").fetchone()[0]
         gateway_count = db.execute("SELECT COUNT(*) FROM gateways").fetchone()[0]
+        device_count = db.execute("SELECT COUNT(*) FROM devices").fetchone()[0]
+        group_count = db.execute("SELECT COUNT(*) FROM subscription_groups").fetchone()[0]
+        healthy_gateways = db.execute(
+            "SELECT COUNT(*) FROM gateways WHERE status='HEALTHY'"
+        ).fetchone()[0]
         events = [
             dict(row)
             for row in db.execute(
@@ -163,6 +169,10 @@ def overview(request: Request):
             "version": version,
             "gateway_count": gateway_count,
             "isp_count": isp_count,
+            "device_count": device_count,
+            "group_count": group_count,
+            "healthy_gateways": healthy_gateways,
+            "active_alerts": len(alerts.snapshot(settings)),
             "events": events,
             "environment": settings.environment,
         },

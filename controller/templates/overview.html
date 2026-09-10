@@ -10,18 +10,18 @@
     <section class="page-heading"><div><p class="eyebrow">OVERVIEW</p><h1>Private Network</h1>
       <p class="muted">网络状态，清晰可见。</p></div><span class="pill online">● System Online</span></section>
     <section class="status-banner"><div class="status-icon" aria-hidden="true">✓</div><div>
-      <h2>Controller 已上线</h2><p>控制台与数据库运行正常。业务网络尚未接入。</p>
+      <h2>控制台与网络服务在线</h2><p>控制台、网关和固定出口的状态可在下方或网络监控页查看。</p>
     </div></section>
     <section class="metrics" aria-label="资源状态">
       {% for label in ['Devices', 'Groups', 'ISP Exits', 'Gateways'] %}
-      <article class="panel metric"><p>{{ label }}</p><strong>{{ gateway_count if label == 'Gateways' else isp_count if label == 'ISP Exits' else '—' }}</strong><span>{{ '已登记' if label in ['Gateways','ISP Exits'] else '尚未接入' }}</span></article>
+      <article class="panel metric"><p>{{ label }}</p><strong>{{ device_count if label == 'Devices' else group_count if label == 'Groups' else gateway_count if label == 'Gateways' else isp_count }}</strong><span>{{ '在线 ' ~ healthy_gateways if label == 'Gateways' else '已登记' }}</span></article>
       {% endfor %}
     </section>
     <section class="content-grid">
       <article class="panel next-step"><p class="eyebrow">NEXT STEP</p><h2>管理网关服务器</h2>
-        <p class="muted">Gateway 支持自动部署与真实状态检测。在固定 ISP 出口通过验证之前，手机网络保持关闭。</p>
-        <p><a class="button-link" href="/gateways">进入服务器管理 →</a></p>
-        <span class="pill">Network Status · 未检测</span>
+        <p class="muted">Gateway 与固定出口会自动检测；出现问题时入口会关闭并在告警页记录。</p>
+        <p><a class="button-link" href="/network">查看网络监控 →</a></p>
+        <span class="pill">当前告警 · {{ active_alerts }}</span>
       </article>
       <article class="panel"><p class="eyebrow">CONTROLLER</p><h2>服务状态</h2>
         <dl class="facts"><div><dt>控制台</dt><dd class="green">在线</dd></div><div><dt>数据库</dt><dd class="green">已连接</dd></div>
@@ -34,7 +34,7 @@
       {% for event in events %}<tr><td>{{ event.time }}</td><td>{{ event.actor }}</td><td>{{ event.action }}</td></tr>{% endfor %}
       </tbody></table></div>
     </section>
-    <footer>Private Fixed-Egress Network Manager · 网络接入与完整 MVP 验收尚未完成</footer>
+    <footer>Private Fixed-Egress Network Manager · 两台 iPhone 实机验收仍需在手机上完成</footer>
   </main>
 </div>
 {% endblock %}

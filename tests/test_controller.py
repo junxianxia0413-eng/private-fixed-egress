@@ -50,7 +50,7 @@ def test_authentication_rotation_logout_and_revocation(client, settings):
     authenticated = client.cookies.get(settings.cookie_name)
     assert authenticated != anonymous
     page = client.get("/")
-    assert "System Online" in page.text and "业务网络尚未接入" in page.text
+    assert "System Online" in page.text and "控制台与网络服务在线" in page.text
     assert "HttpOnly" in response.headers["set-cookie"]
     assert "SameSite=strict" in response.headers["set-cookie"]
     with connect(settings.database_path) as db:
