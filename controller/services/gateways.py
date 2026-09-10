@@ -204,7 +204,7 @@ class GatewayWorker:
                     needs_recovery = True
                     worked = False
                 if not worked:
-                    self.stop.wait(2)
+                    self.stop.wait(0.5)
         finally:
             self.lock.close()
 

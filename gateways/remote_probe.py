@@ -9,6 +9,7 @@ import ssl
 import struct
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 TARGETS = ("api.ipify.org", "icanhazip.com")
 
@@ -87,6 +88,13 @@ def request_ip(config, address, target):
     return str(actual), round((time.monotonic() - began) * 1000, 1)
 
 
+def request_all(config, address):
+    # Each source uses an independent SOCKS/TLS connection. Running them together keeps
+    # identity agreement while the operator waits only for the slower source.
+    with ThreadPoolExecutor(max_workers=len(TARGETS)) as pool:
+        return list(pool.map(lambda target: request_ip(config, address, target), TARGETS))
+
+
 def probe(config):
     try:
         if (
@@ -98,8 +106,7 @@ def probe(config):
         ):
             raise ProbeError("INVALID_INPUT")
         address = endpoint(config["host"])
-        first, latency1 = request_ip(config, address, TARGETS[0])
-        second, latency2 = request_ip(config, address, TARGETS[1])
+        (first, latency1), (second, latency2) = request_all(config, address)
         if first != second:
             return {
                 "ok": False,
@@ -111,6 +118,7 @@ def probe(config):
             "ok": True,
             "exit_ip": first,
             "latency_ms": round((latency1 + latency2) / 2, 1),
+            "source_latency_ms": dict(zip(TARGETS, (latency1, latency2), strict=True)),
             "sources": list(TARGETS),
         }
     except ProbeError as exc:

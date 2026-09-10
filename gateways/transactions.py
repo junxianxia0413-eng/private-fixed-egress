@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 
 from gateways.configuration import render, validate
-from gateways.remote_probe import TARGETS, request_ip
+from gateways.remote_probe import TARGETS, request_all, request_ip
 
 BASE = Path("/var/lib/pfem-gateway-admin")
 PENDING = BASE / "pending"
@@ -157,7 +157,7 @@ def verify(groups, clients=True):
             "username": group["probe_username"],
             "password": group["probe_password"],
         }
-        measurements = [request_ip(config, "127.0.0.1", target) for target in TARGETS]
+        measurements = request_all(config, "127.0.0.1")
         if any(ip != group["expected_ip"] for ip, _ in measurements):
             raise ApplyError("EXIT_IP_MISMATCH")
         if clients:

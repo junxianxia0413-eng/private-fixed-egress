@@ -19,7 +19,7 @@
       {% if isp.last_error %}<p class="error">{{ isp.last_error }}</p>{% endif %}
       <dl class="facts"><div><dt>固定出口 IP</dt><dd>{{ isp.expected_exit_ip or '首次成功后确定' }}</dd></div>
         <div><dt>当前检测 IP</dt><dd>{{ isp.current_exit_ip or '尚未取得' }}</dd></div>
-        <div><dt>HTTPS 检测耗时</dt><dd>{{ isp.latency_ms if isp.latency_ms is not none else '—' }} ms</dd></div>
+        <div><dt>两站平均完整请求耗时</dt><dd>{{ isp.latency_ms if isp.latency_ms is not none else '—' }} ms</dd></div>
         <div><dt>检测网关</dt><dd>{{ isp.gateway_name }}</dd></div>
         <div><dt>国家 / 城市</dt><dd>{{ isp.country or '未填写' }} / {{ isp.city or '未填写' }}</dd></div>
         <div><dt>到期日</dt><dd>{{ isp.expires_on or '待补充' }}{% if isp.days_left is not none %}<br>剩余 {{ isp.days_left }} 天{% endif %}</dd></div></dl>
@@ -49,7 +49,7 @@
         {% for c in checks %}<tr><td>#{{ c.id }}</td><td>{{ c.name }}</td><td>{{ c.expected_ip or '—' }}</td><td>{{ c.observed_ip or '未取得' }}</td><td>{{ '正常' if c.status == 'HEALTHY' else '异常' }}{% if c.error %}<br>{{ c.error }}{% endif %}</td></tr>
         {% else %}<tr><td colspan="5">还没有检测记录</td></tr>{% endfor %}
       </tbody></table></div>
-    </section><footer>检测经过所选网关与 ISP · 两个独立 HTTPS 服务核对出口 · 手机接入将在后续阶段完成</footer>
+    </section><footer>两个 HTTPS 服务并行核对出口 · 该耗时包含代理连接、TLS 和网站响应，不等于线路延迟</footer>
   </main>
 </div>
 {% endblock %}

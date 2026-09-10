@@ -179,6 +179,21 @@ def test_two_different_exit_ips_are_not_reported_stable(monkeypatch):
     assert not result["ok"] and result["error"] == "UNSTABLE_EXIT"
 
 
+def test_independent_identity_sources_run_concurrently(monkeypatch):
+    import threading
+    import time
+
+    barrier = threading.Barrier(2)
+
+    def request(*args):
+        barrier.wait(timeout=1)
+        time.sleep(0.02)
+        return "1.1.1.1", 50
+
+    monkeypatch.setattr(remote_probe, "request_ip", request)
+    assert len(remote_probe.request_all({}, "8.8.8.8")) == 2
+
+
 def test_remote_error_is_translated_without_diagnostic_leaks(settings, isp_data, monkeypatch):  # noqa: F811
     identifier = isps.register(settings, isp_data, "admin")
     with connect(settings.database_path) as db:
