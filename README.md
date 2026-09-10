@@ -53,6 +53,7 @@ python -m uvicorn controller.main:app --host 127.0.0.1 --port 8000
 
 Debian 12 部署步骤见 [deploy/README.md](deploy/README.md)。
 测试证据与未完成验收见 [VALIDATION.md](VALIDATION.md)。
+完整的日常操作说明见 [USER-GUIDE.md](USER-GUIDE.md)。
 开发任务见 [GitHub Issues](https://github.com/junxianxia0413-eng/private-fixed-egress/issues)。
 当前连接没有 Milestone 创建能力，暂用 Phase 0–10 共 11 个 Issue 跟踪。
 
