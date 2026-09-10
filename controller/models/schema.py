@@ -83,4 +83,12 @@ MIGRATIONS = [
         """CREATE UNIQUE INDEX one_exit_transaction ON exit_jobs(gateway_id)
             WHERE state IN ('QUEUED','RUNNING')""",
     ],
+    [
+        """CREATE TABLE devices (
+            id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, type TEXT NOT NULL DEFAULT '',
+            platform TEXT NOT NULL, purpose TEXT NOT NULL DEFAULT '',
+            notes TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL
+        )""",
+    ],
 ]

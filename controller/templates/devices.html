@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}设备 · Private Network{% endblock %}
+{% macro fields(d) %}
+<div class="form-grid">
+{% for key,label,limit in [('name','设备名称',64),('type','类型',40),('platform','系统',40),('purpose','用途',120)] %}
+<label>{{ label }}<input name="{{ key }}" maxlength="{{ limit }}" value="{{ d[key] if d else '' }}" {{ 'required' if key in ['name','platform'] else '' }}></label>
+{% endfor %}</div><label>备注<input name="notes" maxlength="1000" value="{{ d.notes if d else '' }}"></label>
+{% endmacro %}
+{% block body %}
+<div class="dashboard">{% include "sidebar.html" %}<main class="main-content">
+<header class="topbar"><span>工作空间 / 设备</span><form action="/logout" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><span>{{ username }}</span><button class="quiet" type="submit">退出</button></form></header>
+<section class="page-heading"><div><p class="eyebrow">DEVICES</p><h1>设备</h1><p class="muted">登记设备，再为两台设备分配同一个订阅组。</p></div></section>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<section class="gateway-grid">{% for d in devices %}<article class="panel gateway-card">
+<div class="section-heading"><h2>{{ d.name }}</h2><span class="pill">已登记</span></div>
+<dl class="facts"><div><dt>类型</dt><dd>{{ d.type or '未填写' }}</dd></div><div><dt>系统</dt><dd>{{ d.platform }}</dd></div><div><dt>用途</dt><dd>{{ d.purpose or '未填写' }}</dd></div></dl>
+{% if d.notes %}<p class="muted">{{ d.notes }}</p>{% endif %}
+<details><summary>编辑设备</summary><form action="/devices/{{ d.id }}/edit" method="post"><input type="hidden" name="csrf" value="{{ csrf }}">{{ fields(d) }}<button class="primary" type="submit">保存修改</button></form></details>
+</article>{% else %}<article class="panel"><h2>登记第一台设备</h2><p class="muted">设备登记不代表手机已经连接。实际连接需要导入订阅。</p></article>{% endfor %}</section>
+<details class="panel add-gateway" {{ 'open' if not devices or error else '' }}><summary>＋ 添加设备</summary><form action="/devices/add" method="post"><input type="hidden" name="csrf" value="{{ csrf }}">{{ fields(none) }}<button class="primary" type="submit">保存设备</button></form></details>
+<footer>设备名称用于管理记录，不用于识别实际连接的物理设备。</footer>
+</main></div>
+{% endblock %}

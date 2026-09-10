@@ -8,6 +8,7 @@ from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from controller.api.dashboard import router
+from controller.api.devices import router as devices_router
 from controller.api.exits import router as exits_router
 from controller.api.gateways import router as gateways_router
 from controller.api.isps import router as isps_router
@@ -111,6 +112,7 @@ def create_app(settings: Settings | None = None):
     app.include_router(gateways_router)
     app.include_router(isps_router)
     app.include_router(exits_router)
+    app.include_router(devices_router)
     return app
 
 
