@@ -95,7 +95,7 @@ def status():
         "guard": guard,
         "probe_available": Path("/usr/local/sbin/pfem-isp-probe").is_file(),
         "config_api": Path("/usr/local/lib/pfem_gateway/gateways/transactions.py").is_file(),
-        "phone_api": 3 if Path("/usr/local/lib/pfem_gateway/gateways/quality.py").is_file() else 0,
+        "phone_api": 4 if Path("/usr/local/lib/pfem_gateway/gateways/quality.py").is_file() else 0,
         "healthy": active and firewall and valid and port and blocked,
         "ssh_key_only": key_only,
         "firewall": firewall,
