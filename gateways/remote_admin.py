@@ -65,9 +65,15 @@ def status():
         for line in Path("/proc/meminfo").read_text().splitlines()
     }
     disk = shutil.disk_usage("/")
+    try:
+        guard = json.loads(Path("/var/lib/pfem-gateway-admin/guard.json").read_text())
+    except (OSError, ValueError):
+        guard = {}
     return {
+        "guard": guard,
         "probe_available": Path("/usr/local/sbin/pfem-isp-probe").is_file(),
         "config_api": Path("/usr/local/lib/pfem_gateway/gateways/transactions.py").is_file(),
+        "phone_api": Path("/usr/local/lib/pfem_gateway/gateways/guard.py").is_file(),
         "healthy": active and firewall and valid and port and blocked,
         "ssh_key_only": key_only,
         "firewall": firewall,

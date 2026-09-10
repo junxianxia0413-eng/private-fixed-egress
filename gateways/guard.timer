@@ -1,0 +1,11 @@
+[Unit]
+Description=Check fixed exit every 15 seconds
+
+[Timer]
+OnBootSec=15s
+OnUnitInactiveSec=15s
+AccuracySec=1s
+Unit=pfem-gateway-guard.service
+
+[Install]
+WantedBy=timers.target

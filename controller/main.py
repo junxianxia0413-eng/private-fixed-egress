@@ -13,6 +13,7 @@ from controller.api.exits import router as exits_router
 from controller.api.gateways import router as gateways_router
 from controller.api.groups import router as groups_router
 from controller.api.isps import router as isps_router
+from controller.api.subscriptions import router as subscriptions_router
 from controller.config import ROOT, Settings
 from controller.services.database import connect, migrate
 from controller.services.gateways import GatewayWorker
@@ -86,7 +87,7 @@ def create_app(settings: Settings | None = None):
                 "Cache-Control": "no-store",
                 "X-Content-Type-Options": "nosniff",
                 "X-Frame-Options": "DENY",
-                "Referrer-Policy": "same-origin",
+                "Referrer-Policy": response.headers.get("Referrer-Policy", "same-origin"),
                 "Content-Security-Policy": (
                     "default-src 'self'; style-src 'self'; script-src 'none'; "
                     "img-src 'self' data:; form-action 'self'; "
@@ -115,6 +116,7 @@ def create_app(settings: Settings | None = None):
     app.include_router(exits_router)
     app.include_router(devices_router)
     app.include_router(groups_router)
+    app.include_router(subscriptions_router)
     return app
 
 

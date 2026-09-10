@@ -124,6 +124,12 @@ def desired(settings, job):
             WHERE e.gateway_id=? AND (e.applied=1 OR e.id=?) ORDER BY e.id""",
             (job["gateway_id"], job["group_id"]),
         ).fetchall()
+        clients = db.execute(
+            """SELECT s.id,s.exit_id,s.client_ref FROM subscription_groups s
+            JOIN exit_groups e ON s.exit_id=e.id
+            WHERE e.gateway_id=? AND s.client_ref IS NOT NULL""",
+            (job["gateway_id"],),
+        ).fetchall()
     groups = []
     for row in rows:
         if not row["expected_exit_ip"]:
@@ -150,6 +156,11 @@ def desired(settings, job):
                 "expected_ip": row["expected_exit_ip"],
                 "probe_username": probe["username"],
                 "probe_password": probe["password"],
+                "clients": [
+                    {"id": c["id"], "password": store.get(c["client_ref"])["password"]}
+                    for c in clients
+                    if c["exit_id"] == row["id"]
+                ],
             }
         )
     validate(groups)
@@ -243,6 +254,23 @@ def run_next(settings):
                         group["id"],
                     ),
                 )
+                for client in group.get("clients", []):
+                    db.execute(
+                        """UPDATE subscription_groups SET state=?,deployed_exit_id=?
+                        WHERE id=? AND exit_id=?""",
+                        (
+                            "READY" if group["enabled"] else "PENDING",
+                            group["id"],
+                            client["id"],
+                            group["id"],
+                        ),
+                    )
+                    audit(
+                        db,
+                        job["actor"],
+                        "subscription.applied",
+                        f"group_id={client['id']};exit_id={group['id']}",
+                    )
             db.execute(
                 "UPDATE exit_jobs SET state='SUCCEEDED',stage='COMPLETE',finished_at=? WHERE id=?",
                 (int(time.time()), job["id"]),
@@ -251,6 +279,11 @@ def run_next(settings):
     except Exception as exc:
         error = str(exc) if isinstance(exc, GatewayError) else "出口组配置异常，请检测后重试。"
         with connect(settings.database_path) as db:
+            db.execute(
+                """UPDATE subscription_groups SET state='PENDING' WHERE exit_id IN
+                (SELECT id FROM exit_groups WHERE gateway_id=?)""",
+                (job["gateway_id"],),
+            )
             db.execute(
                 "UPDATE exit_groups SET status='UNKNOWN',last_error=? WHERE gateway_id=?",
                 ("网关配置未确认，请重新验证。", job["gateway_id"]),

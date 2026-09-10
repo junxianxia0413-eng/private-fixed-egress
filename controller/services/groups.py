@@ -68,7 +68,8 @@ def snapshot(settings):
     with connect(settings.database_path) as db:
         rows = [
             dict(r)
-            for r in db.execute("""SELECT s.*,e.name AS exit_name,e.gateway_id,
+            for r in db.execute("""SELECT s.id,s.name,s.exit_id,s.state,s.created_at,
+            e.name AS exit_name,e.gateway_id,
             i.name AS isp_name,i.expected_exit_ip FROM subscription_groups s
             JOIN exit_groups e ON s.exit_id=e.id JOIN isp_exits i ON e.isp_id=i.id ORDER BY s.id""")
         ]
@@ -149,6 +150,11 @@ def confirm_change(settings, identifier, token, actor):
         ):
             raise ValueError("确认已过期或绑定已变化，请重新选择。")
         new = available_exit(db, row["new_exit_id"])
+        if db.execute(
+            "SELECT 1 FROM exit_jobs WHERE gateway_id=? AND state IN ('QUEUED','RUNNING')",
+            (new["gateway_id"],),
+        ).fetchone():
+            raise ValueError("网关配置处理中，请稍后重新确认。")
         old = db.execute(
             """SELECT e.isp_id,i.name,i.expected_exit_ip FROM exit_groups e
             JOIN isp_exits i ON e.isp_id=i.id WHERE e.id=?""",
@@ -159,6 +165,10 @@ def confirm_change(settings, identifier, token, actor):
             (row["new_exit_id"], identifier),
         )
         db.execute("DELETE FROM group_confirmations WHERE group_id=?", (identifier,))
+        if group["client_ref"]:
+            from controller.services.subscriptions import queue
+
+            queue(db, identifier, actor)
         audit(
             db,
             actor,

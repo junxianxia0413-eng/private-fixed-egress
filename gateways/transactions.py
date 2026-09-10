@@ -10,6 +10,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -84,7 +85,69 @@ def restart():
     service_ready()
 
 
-def verify(groups):
+def verify_client(group, client):
+    # A real encrypted client confirms that the generated phone entry reaches the pinned ISP.
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+    config = {
+        "log": {"disabled": True},
+        "inbounds": [
+            {
+                "type": "socks",
+                "listen": "127.0.0.1",
+                "listen_port": port,
+                "users": [
+                    {"username": group["probe_username"], "password": group["probe_password"]}
+                ],
+            }
+        ],
+        "outbounds": [
+            {
+                "type": "shadowsocks",
+                "tag": "selected",
+                "server": "127.0.0.1",
+                "server_port": 20000 + client["id"],
+                "method": "aes-128-gcm",
+                "password": client["password"],
+            }
+        ],
+        "route": {"final": "selected"},
+    }
+    with tempfile.TemporaryDirectory(prefix="pfem-entry-", dir=str(BASE)) as directory:
+        path = Path(directory) / "client.json"
+        write(path, json.dumps(config).encode())
+        checked([CORE, "check", "-c", str(path)])
+        process = subprocess.Popen(
+            [CORE, "run", "-c", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        try:
+            for _ in range(30):
+                if process.poll() is not None:
+                    raise ApplyError("ENCRYPTED_CLIENT_FAILED")
+                try:
+                    with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+                        break
+                except OSError:
+                    time.sleep(0.1)
+            probe = {
+                "port": port,
+                "username": group["probe_username"],
+                "password": group["probe_password"],
+            }
+            actual, _ = request_ip(probe, "127.0.0.1", TARGETS[0])
+            if actual != group["expected_ip"]:
+                raise ApplyError("ENCRYPTED_EXIT_MISMATCH")
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+
+
+def verify(groups, clients=True):
     results = []
     for group in groups:
         if not group["enabled"]:
@@ -97,6 +160,9 @@ def verify(groups):
         measurements = [request_ip(config, "127.0.0.1", target) for target in TARGETS]
         if any(ip != group["expected_ip"] for ip, _ in measurements):
             raise ApplyError("EXIT_IP_MISMATCH")
+        if clients:
+            for client in group.get("clients", []):
+                verify_client(group, client)
         results.append(
             {
                 "id": group["id"],
@@ -161,6 +227,15 @@ def apply(payload):
                 "config_hash": hashlib.sha256(CONFIG.read_bytes()).hexdigest(),
             }
     config, firewall = render(groups, pwd.getpwnam("pfem-proxy").pw_uid)
+    old_groups = json.loads(MANIFEST.read_text()).get("groups", []) if MANIFEST.exists() else []
+    old_ports = {20000 + c["id"] for g in old_groups for c in g.get("clients", [])}
+    new_ports = {20000 + c["id"] for g in groups for c in g.get("clients", [])}
+    for port in new_ports - old_ports:
+        with socket.socket() as reservation:
+            try:
+                reservation.bind(("0.0.0.0", port))
+            except OSError:
+                raise ApplyError("PHONE_PORT_IN_USE") from None
     BASE.mkdir(mode=0o700, parents=True, exist_ok=True)
     backups = BASE / "backups"
     backups.mkdir(mode=0o700, exist_ok=True)
@@ -198,6 +273,7 @@ def apply(payload):
                 "--unit=" + TIMER,
                 "--collect",
                 "--on-active=120s",
+                "--timer-property=AccuracySec=1s",
                 "--property=Restart=on-failure",
                 "--property=RestartSec=5s",
                 "/usr/local/sbin/pfem-gateway-admin",
@@ -209,6 +285,12 @@ def apply(payload):
         write(FIREWALL, candidate_fw.read_bytes())
         restart()
         results = verify(groups)
+        # Keep existing firewall policy. Open only reserved, lease-protected phone ports.
+        if shutil.which("ufw") and b"Status: active" in getattr(
+            command(["ufw", "status"]), "stdout", b""
+        ):
+            for port in sorted(new_ports):
+                checked(["ufw", "allow", str(port) + "/tcp", "comment", "PFEM-phone-entry"])
         write(MANIFEST, json.dumps({"transaction": transaction, "groups": groups}).encode())
         return {
             "ok": True,

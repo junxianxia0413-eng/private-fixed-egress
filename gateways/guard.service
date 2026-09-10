@@ -1,0 +1,10 @@
+[Unit]
+Description=Verify fixed exit identity and renew public ingress lease
+After=pfem-gateway.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -m gateways.guard
+WorkingDirectory=/usr/local/lib/pfem_gateway
+TimeoutStartSec=55
+UMask=0077

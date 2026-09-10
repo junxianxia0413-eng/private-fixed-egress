@@ -24,6 +24,11 @@ def health(client, action="status"):
     return {
         "probe_available": result.get("probe_available", False),
         "config_api": result.get("config_api", False),
+        "phone_api": result.get("phone_api", False),
+        "guard": {
+            k: result.get("guard", {}).get(k)
+            for k in ("healthy", "checked_at", "results", "public_ports", "transaction")
+        },
         **{
             k: result[k]
             for k in (
@@ -64,6 +69,9 @@ def bootstrap(gateway, credentials, managed):
                 "transactions.py",
                 "recover.service",
                 "__init__.py",
+                "guard.py",
+                "guard.service",
+                "guard.timer",
             ):
                 with sftp.open(f"{directory}/{name}", "w") as file:
                     file.write((FILES / name).read_bytes())
@@ -90,7 +98,7 @@ def deploy(gateway, store, stage):
     try:
         with connect_gateway(gateway, "proxyadmin", managed) as client:
             report = health(client, "reconcile")
-            if not report["probe_available"] or not report["config_api"]:
+            if not report["probe_available"] or not report["config_api"] or not report["phone_api"]:
                 raise GatewayError("网关需要更新管理组件。")
     except GatewayError:
         # Recovery key first: a previous attempt may have installed keys already.

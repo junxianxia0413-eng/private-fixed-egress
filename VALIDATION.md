@@ -86,3 +86,7 @@ Phase 0–4 完成。整个 MVP 尚未完成。
 ## Phase 6 订阅组
 
 两台不同设备绑定、设备唯一归属、同网关出口切换的一次性确认与旧/新 ISP 审计通过测试。Windows 95 passed / 9 Linux-only skipped。此阶段登记不开放手机入口；待 Phase 7 生成并验证订阅。
+
+## Phase 7 加密入口与订阅
+
+实现单节点 SIP002/Base64 订阅、秘密引用、令牌轮换与旧链接撤销；配置事务通过真实加密客户端验证出口。Gateway 独立探针每次完成后 15 秒复查；入口租约 70 秒未刷新即关闭。TCP-only，手机和 UDP 尚未实测。Windows 98 passed / 10 Linux-only skipped；生产验证进行中。

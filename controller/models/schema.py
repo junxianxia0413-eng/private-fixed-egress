@@ -111,4 +111,12 @@ MIGRATIONS = [
             expires_at INTEGER NOT NULL
         )""",
     ],
+    [
+        "ALTER TABLE subscription_groups ADD COLUMN client_ref TEXT",
+        "ALTER TABLE subscription_groups ADD COLUMN token_ref TEXT",
+        "ALTER TABLE subscription_groups ADD COLUMN token_hash TEXT",
+        "ALTER TABLE subscription_groups ADD COLUMN deployed_exit_id "
+        "INTEGER REFERENCES exit_groups(id)",
+        "CREATE UNIQUE INDEX unique_subscription_token ON subscription_groups(token_hash)",
+    ],
 ]

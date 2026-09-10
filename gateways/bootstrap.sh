@@ -53,7 +53,7 @@ fi
 /usr/local/bin/pfem-sing-box check -c "$managed/config.json"
 install -d -m 755 /usr/local/lib/pfem_gateway /usr/local/lib/pfem_gateway/gateways
 install -d -m 700 /var/lib/pfem-gateway-admin
-for module in __init__.py configuration.py transactions.py remote_probe.py; do
+for module in __init__.py configuration.py transactions.py remote_probe.py guard.py; do
   install -m 644 "$module" "/usr/local/lib/pfem_gateway/gateways/$module"
 done
 install -m 755 remote_admin.py /usr/local/sbin/pfem-gateway-admin
@@ -78,12 +78,21 @@ add rule inet pfem_guard output meta skuid $proxy_uid ip daddr != 127.0.0.0/8 re
 add rule inet pfem_guard output meta skuid $proxy_uid ip6 daddr != ::1 reject
 NFT
 fi
+if ! grep -q pfem_live "$managed/firewall.nft"; then
+  cat >> "$managed/firewall.nft" <<'LEASE'
+add set inet pfem_guard pfem_live { type inet_service; flags timeout; timeout 70s; }
+add rule inet pfem_guard input iifname != "lo" tcp dport 20001-21000 tcp dport != @pfem_live drop
+LEASE
+fi
 nft -c -f "$managed/firewall.nft"
 install -m 644 firewall.service /etc/systemd/system/pfem-gateway-firewall.service
 install -m 644 recover.service /etc/systemd/system/pfem-gateway-recover.service
+install -m 644 guard.service /etc/systemd/system/pfem-gateway-guard.service
+install -m 644 guard.timer /etc/systemd/system/pfem-gateway-guard.timer
 systemctl daemon-reload
 systemctl enable pfem-gateway-recover.service pfem-gateway-firewall.service pfem-gateway.service
 systemctl start pfem-gateway-recover.service
 systemctl restart pfem-gateway-firewall.service
 systemctl start pfem-gateway.service
+systemctl enable --now pfem-gateway-guard.timer
 echo PFEM_BOOTSTRAP_OK
