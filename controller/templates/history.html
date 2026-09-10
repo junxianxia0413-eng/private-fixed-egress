@@ -1,0 +1,7 @@
+{% extends "base.html" %}{% block title %}历史记录 · Private Network{% endblock %}{% block body %}
+<div class="dashboard">{% include "sidebar.html" %}<main class="main-content">
+<header class="topbar"><span>工作空间 / 历史记录</span><form action="/logout" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><span>{{ username }}</span><button class="quiet" type="submit">退出</button></form></header>
+<section class="page-heading"><div><p class="eyebrow">HISTORY</p><h1>历史记录</h1><p class="muted">记录操作者、时间和变更内容；秘密值不会写入审计。</p></div></section>
+<section class="panel history"><div class="table-wrap"><table><thead><tr><th>时间</th><th>操作者</th><th>操作</th><th>详情</th></tr></thead><tbody>{% for event in events %}<tr><td>{{ event.time }}</td><td>{{ event.actor }}</td><td>{{ event.action }}</td><td><details><summary>查看</summary><pre>{{ event.detail_view }}</pre></details></td></tr>{% else %}<tr><td colspan="4">暂无记录</td></tr>{% endfor %}</tbody></table></div></section>
+<p class="pager">{% if page > 1 %}<a href="/history?page={{ page-1 }}">上一页</a>{% endif %} 第 {{ page }} 页 {% if events|length == 50 %}<a href="/history?page={{ page+1 }}">下一页</a>{% endif %}</p>
+</main></div>{% endblock %}

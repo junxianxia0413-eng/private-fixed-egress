@@ -9,9 +9,8 @@
     <a class="{{ 'active' if active == 'exits' else '' }}" href="/exits">Exit Groups <span>出口线路</span></a>
     <a class="{{ 'active' if active == 'groups' else '' }}" href="/groups">Groups <span>订阅组</span></a>
     <a class="{{ 'active' if active == 'network' else '' }}" href="/network">Network Health <span>网络监控</span></a>
-    {% for label in ['Alerts', 'History'] %}
-    <div class="nav-pending">{{ label }} <span>待接入</span></div>
-    {% endfor %}
+    <a class="{{ 'active' if active == 'alerts' else '' }}" href="/alerts">Alerts <span>告警</span></a>
+    <a class="{{ 'active' if active == 'history' else '' }}" href="/history">History <span>历史记录</span></a>
   </nav>
   <p class="sidebar-note">固定出口网络管理<br>Fixed Egress</p>
 </aside>

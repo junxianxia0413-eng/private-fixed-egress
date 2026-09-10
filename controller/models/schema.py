@@ -135,4 +135,14 @@ MIGRATIONS = [
         )""",
         "CREATE INDEX monitor_sample_lookup ON monitor_samples(gateway_id,kind,occurred_at)",
     ],
+    [
+        """CREATE TABLE alerts (
+            id INTEGER PRIMARY KEY, kind TEXT NOT NULL, fingerprint TEXT NOT NULL,
+            severity TEXT NOT NULL CHECK(severity IN ('INFO','WARNING','CRITICAL')),
+            title TEXT NOT NULL, detail TEXT NOT NULL, first_seen INTEGER NOT NULL,
+            last_seen INTEGER NOT NULL, resolved_at INTEGER
+        )""",
+        "CREATE UNIQUE INDEX active_alert ON alerts(fingerprint) WHERE resolved_at IS NULL",
+        "CREATE INDEX alert_history ON alerts(resolved_at,last_seen)",
+    ],
 ]

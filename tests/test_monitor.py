@@ -2,7 +2,7 @@
 import time
 from unittest.mock import MagicMock
 
-from controller.services import exits, monitor
+from controller.services import alerts, exits, monitor
 from controller.services.database import connect
 from gateways import quality
 from tests.test_controller import csrf, login
@@ -87,3 +87,26 @@ def test_monitor_auth_csrf_and_empty_quality(client, group_data):
         == 303
     )
     assert "等待首次线路测量" in client.get("/network").text
+
+
+def test_alerts_and_history_are_authenticated_and_deduplicated(client, settings, data):
+    assert client.get("/alerts").status_code == 303
+    assert client.get("/history").status_code == 303
+    with connect(settings.database_path) as db:
+        gateway_id = db.execute(
+            "INSERT INTO gateways "
+            "(name,host,ssh_port,bootstrap_user,host_key,managed_ref,created_at,status,last_error) "
+            "VALUES ('G','8.8.8.8',22,'root','ssh-ed25519 AAAA','ref',1,'CRITICAL','down')"
+        ).lastrowid
+    alerts.sync(settings)
+    alerts.sync(settings)
+    with connect(settings.database_path) as db:
+        assert db.execute("SELECT COUNT(*) FROM alerts").fetchone()[0] == 1
+        db.execute("UPDATE gateways SET status='HEALTHY',last_error='' WHERE id=?", (gateway_id,))
+    alerts.sync(settings)
+    with connect(settings.database_path) as db:
+        assert db.execute("SELECT resolved_at FROM alerts").fetchone()[0] is not None
+    login(client)
+    assert client.get("/alerts").status_code == 200
+    assert client.get("/history").status_code == 200
+    assert "网关 G 异常" in client.get("/alerts?resolved=1").text

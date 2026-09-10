@@ -12,6 +12,7 @@ from controller.api.devices import router as devices_router
 from controller.api.exits import router as exits_router
 from controller.api.gateways import router as gateways_router
 from controller.api.groups import router as groups_router
+from controller.api.history import router as history_router
 from controller.api.isps import router as isps_router
 from controller.api.network import router as network_router
 from controller.api.subscriptions import router as subscriptions_router
@@ -119,6 +120,7 @@ def create_app(settings: Settings | None = None):
     app.include_router(groups_router)
     app.include_router(subscriptions_router)
     app.include_router(network_router)
+    app.include_router(history_router)
     return app
 
 

@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block title %}告警 · Private Network{% endblock %}{% block body %}
+<div class="dashboard">{% include "sidebar.html" %}<main class="main-content">
+<header class="topbar"><span>工作空间 / 告警</span><form action="/logout" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><span>{{ username }}</span><button class="quiet" type="submit">退出</button></form></header>
+<section class="page-heading"><div><p class="eyebrow">ALERTS</p><h1>告警</h1><p class="muted">异常持续时合并为一条，恢复后保留解决时间。</p></div><a class="button-link" href="/alerts?resolved={{ 0 if resolved else 1 }}">{{ '查看当前告警' if resolved else '查看已解决' }}</a></section>
+<section class="gateway-grid">{% for a in alerts %}<article class="panel gateway-card"><div class="section-heading"><h2>{{ a.title }}</h2><span class="pill {{ 'bad' if a.severity == 'CRITICAL' else '' }}">{{ {'CRITICAL':'严重','WARNING':'提醒','INFO':'信息'}.get(a.severity,a.severity) }}</span></div><p>{{ a.detail }}</p><p class="muted">首次：{{ a.first_time }} · 最近：{{ a.last_time }}{% if a.resolved_time %} · 已恢复：{{ a.resolved_time }}{% endif %}</p></article>{% else %}<article class="panel"><h2>{{ '没有当前告警' if not resolved else '没有已解决告警' }}</h2><p class="muted">系统会在检测到异常时自动记录。</p></article>{% endfor %}</section>
+</main></div>{% endblock %}
