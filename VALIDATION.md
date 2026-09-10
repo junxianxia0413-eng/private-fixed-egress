@@ -1,13 +1,13 @@
 # 阶段验收记录
 
-验证日期：2026-09-08 UTC。
+验证日期：2026-09-10 UTC。
 
 ## 已验证
 
 | 范围 | 证据/结果 |
 | --- | --- |
 | Phase 0 | 本地 Python 3.14 virtualenv；FastAPI + SQLite 启动与健康检查通过 |
-| 自动测试 | `python -m pytest -q`：61 passed |
+| 自动测试 | Windows Python 3.14：103 passed / 10 Linux-only skipped；Debian Python 3.11：113 passed |
 | 代码检查 | Ruff lint、format、Git diff whitespace 检查通过 |
 | 依赖 | 锁定运行/开发依赖；`pip check` 通过 |
 | 持久化 | 应用重建后会话仍有效；退出、到期、重设管理员使旧会话失效 |
@@ -38,11 +38,11 @@ Chrome 自动化默认关闭组件更新时曾出现 CT 校验错误；恢复正
 
 - 域名模式的 DNS/证书未在现场执行；本次验证采用无域名的公网 IPv4 模式。
 - Gateway 已完成现场部署；实际 SOCKS5 ISP 已通过认证、双源出口和后台复查。
-- 设备管理、订阅、完整周期监控与 History/Alerts 尚待后续阶段。
+- 设备管理、订阅、周期监控、History/Alerts 已完成并部署；仍需两台 iPhone 实机验收。
 - 未使用真实 iPhone/Shadowrocket，MVP.md 的现场 Test 01–10 全部待执行。
 - 未测试真实 Safari；390px Chrome 视口验证不是 iPhone 实机验收。
 
-Phase 0–4 完成。整个 MVP 尚未完成。
+Phase 0–9 已完成。Phase 10 只剩两台 iPhone 的真实链路验收。
 
 ## Phase 2 开发验证
 
@@ -90,3 +90,15 @@ Phase 0–4 完成。整个 MVP 尚未完成。
 ## Phase 7 加密入口与订阅
 
 实现单节点 SIP002/Base64 订阅、秘密引用、令牌轮换与旧链接撤销；配置事务通过真实加密客户端验证出口。Gateway 独立探针每次完成后 15 秒复查；入口租约 70 秒未刷新即关闭。TCP-only，手机和 UDP 尚未实测。Windows 98 passed / 10 Linux-only skipped；生产验证进行中。
+
+## Phase 8 网络监控
+
+新增 Gateway 健康任务、线路质量任务、资源与入口连接统计、五分钟 TCP 延迟/抖动/ICMP 采样、质量参考分和过期状态。质量页明确显示“服务器 → ISP 代理入口”，不把手机 RTT 或网站完整响应时间混入线路指标。Windows 103 passed / 10 Linux-only skipped；Debian 113 passed；生产 schema 8、健康和质量任务均成功，真实样本为 TCP 延迟约 1.16 ms、0/10 TCP 连接失败。
+
+## Phase 9 运营页面
+
+新增告警去重与恢复时间、ISP 到期提醒、网关/ISP/出口异常告警、审计历史分页和真实概览计数。生产 schema 9；Chrome 390px 页面验证 Network、Alerts、History 均无横向溢出，Controller、Gateway、入口守卫和监控任务均 active。
+
+## Phase 10 真实手机验收
+
+未执行。需要两台 iPhone 在 Shadowrocket 导入同一私密订阅，分别验证固定出口 IP、Wi-Fi/蜂窝延迟、IPv6/DNS 行为和异常恢复；Windows 或 Chrome 视口不能替代该项。
