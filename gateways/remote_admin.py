@@ -73,7 +73,7 @@ def status():
         "guard": guard,
         "probe_available": Path("/usr/local/sbin/pfem-isp-probe").is_file(),
         "config_api": Path("/usr/local/lib/pfem_gateway/gateways/transactions.py").is_file(),
-        "phone_api": Path("/usr/local/lib/pfem_gateway/gateways/guard.py").is_file(),
+        "phone_api": 2 if Path("/usr/local/lib/pfem_gateway/gateways/guard.py").is_file() else 0,
         "healthy": active and firewall and valid and port and blocked,
         "ssh_key_only": key_only,
         "firewall": firewall,
@@ -165,10 +165,15 @@ def main():
         return handle(action)
     if action != "status":
         with open("/run/lock/pfem-gateway.lock", "w") as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                return 75
+            deadline = time.monotonic() + 10
+            while True:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        return 75
+                    time.sleep(0.1)
             if action == "harden":
                 code = harden()
                 if code:

@@ -333,10 +333,15 @@ def handle(action):
     if action == "recover-config" and not PENDING.exists():
         return 0
     with open("/run/lock/pfem-gateway.lock", "w") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            return 75
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    return 75
+                time.sleep(0.1)
         try:
             if action in {"apply-config", "commit-config"}:
                 raw = sys.stdin.buffer.read(131073)

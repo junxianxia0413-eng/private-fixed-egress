@@ -98,7 +98,11 @@ def deploy(gateway, store, stage):
     try:
         with connect_gateway(gateway, "proxyadmin", managed) as client:
             report = health(client, "reconcile")
-            if not report["probe_available"] or not report["config_api"] or not report["phone_api"]:
+            if (
+                not report["probe_available"]
+                or not report["config_api"]
+                or report["phone_api"] != 2
+            ):
                 raise GatewayError("网关需要更新管理组件。")
     except GatewayError:
         # Recovery key first: a previous attempt may have installed keys already.

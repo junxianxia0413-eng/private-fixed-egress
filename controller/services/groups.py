@@ -3,6 +3,7 @@ import json
 import secrets
 import sqlite3
 import time
+from datetime import UTC, date, datetime
 
 from controller.services.database import audit, connect
 
@@ -10,13 +11,16 @@ from controller.services.database import audit, connect
 def available_exit(db, identifier):
     row = db.execute(
         """SELECT e.*,i.name AS isp_name,i.expected_exit_ip,i.status AS isp_status,
+        i.current_exit_ip AS verified_ip,i.expires_on,
         i.tested_at FROM exit_groups e JOIN isp_exits i ON e.isp_id=i.id WHERE e.id=?""",
         (identifier,),
     ).fetchone()
     if (
         not row
         or not row["applied"]
-        or row["isp_status"] != "HEALTHY"
+        or row["isp_status"] not in ("HEALTHY", "CHECKING")
+        or row["verified_ip"] != row["expected_exit_ip"]
+        or (row["expires_on"] and date.fromisoformat(row["expires_on"]) < datetime.now(UTC).date())
         or not row["tested_at"]
         or time.time() - row["tested_at"] > 120
     ):
