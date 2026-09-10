@@ -70,6 +70,7 @@ def bootstrap(gateway, credentials, managed):
                 "recover.service",
                 "__init__.py",
                 "guard.py",
+                "quality.py",
                 "guard.service",
                 "guard.timer",
             ):
@@ -101,7 +102,7 @@ def deploy(gateway, store, stage):
             if (
                 not report["probe_available"]
                 or not report["config_api"]
-                or report["phone_api"] != 2
+                or report["phone_api"] != 3
             ):
                 raise GatewayError("网关需要更新管理组件。")
     except GatewayError:

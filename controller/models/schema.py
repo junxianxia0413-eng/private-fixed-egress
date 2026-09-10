@@ -119,4 +119,20 @@ MIGRATIONS = [
         "INTEGER REFERENCES exit_groups(id)",
         "CREATE UNIQUE INDEX unique_subscription_token ON subscription_groups(token_hash)",
     ],
+    [
+        """CREATE TABLE monitor_jobs (
+            id INTEGER PRIMARY KEY, gateway_id INTEGER NOT NULL REFERENCES gateways(id),
+            kind TEXT NOT NULL CHECK(kind IN ('health','quality')),
+            state TEXT NOT NULL DEFAULT 'QUEUED', error TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL, finished_at INTEGER
+        )""",
+        """CREATE UNIQUE INDEX one_monitor_job ON monitor_jobs(gateway_id,kind)
+            WHERE state IN ('QUEUED','RUNNING')""",
+        """CREATE TABLE monitor_samples (
+            id INTEGER PRIMARY KEY, gateway_id INTEGER NOT NULL REFERENCES gateways(id),
+            kind TEXT NOT NULL, occurred_at INTEGER NOT NULL, healthy INTEGER NOT NULL,
+            data_json TEXT NOT NULL
+        )""",
+        "CREATE INDEX monitor_sample_lookup ON monitor_samples(gateway_id,kind,occurred_at)",
+    ],
 ]

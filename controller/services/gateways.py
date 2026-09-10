@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 
 import paramiko
 
-from controller.services import exits, isps
+from controller.services import exits, isps, monitor
 from controller.services.database import audit, connect
 from controller.services.secrets import SecretStore
 from gateways import deployment
@@ -141,6 +141,7 @@ class GatewayWorker:
             db.execute("BEGIN IMMEDIATE")
             isps.recover(db)
             exits.recover(db)
+            monitor.recover(db)
             for row in db.execute("SELECT * FROM gateway_jobs WHERE state='RUNNING'").fetchall():
                 db.execute(
                     """UPDATE gateways SET status=?,last_error=? WHERE id=?""",
@@ -191,8 +192,12 @@ class GatewayWorker:
                         self.recover()
                         needs_recovery = False
                     isps.schedule_due(self.settings)
+                    monitor.schedule_due(self.settings)
                     worked = (
-                        self.once() or isps.run_next(self.settings) or exits.run_next(self.settings)
+                        self.once()
+                        or exits.run_next(self.settings)
+                        or monitor.run_next(self.settings)
+                        or isps.run_next(self.settings)
                     )
                 except Exception:
                     # DB outages must not kill the worker or disclose stored data in logs.

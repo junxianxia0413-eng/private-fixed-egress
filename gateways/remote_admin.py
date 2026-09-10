@@ -18,6 +18,27 @@ SSH_BACKUP = Path("/etc/pfem-gateway/ssh-before-hardening.json")
 TIMER = "pfem-ssh-rollback"
 
 
+def network_metrics():
+    interfaces = [
+        line.split()[0]
+        for line in Path("/proc/net/route").read_text().splitlines()[1:]
+        if line.split()[1] == "00000000"
+    ]
+    totals = {"rx_bytes": 0, "tx_bytes": 0, "connections": 0}
+    for line in Path("/proc/net/dev").read_text().splitlines()[2:]:
+        name, fields = line.split(":", 1)
+        if name.strip() in interfaces:
+            values = fields.split()
+            totals["rx_bytes"] += int(values[0])
+            totals["tx_bytes"] += int(values[8])
+    for name in ("tcp", "tcp6"):
+        for line in Path("/proc/net/" + name).read_text().splitlines()[1:]:
+            fields = line.split()
+            if fields[3] == "01" and 20001 <= int(fields[1].split(":")[1], 16) <= 21000:
+                totals["connections"] += 1
+    return totals
+
+
 def command(args, timeout=15):
     return subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
 
@@ -70,10 +91,11 @@ def status():
     except (OSError, ValueError):
         guard = {}
     return {
+        **network_metrics(),
         "guard": guard,
         "probe_available": Path("/usr/local/sbin/pfem-isp-probe").is_file(),
         "config_api": Path("/usr/local/lib/pfem_gateway/gateways/transactions.py").is_file(),
-        "phone_api": 2 if Path("/usr/local/lib/pfem_gateway/gateways/guard.py").is_file() else 0,
+        "phone_api": 3 if Path("/usr/local/lib/pfem_gateway/gateways/quality.py").is_file() else 0,
         "healthy": active and firewall and valid and port and blocked,
         "ssh_key_only": key_only,
         "firewall": firewall,
@@ -144,6 +166,7 @@ def harden():
 def main():
     if len(sys.argv) != 2 or sys.argv[1] not in {
         "status",
+        "quality",
         "reconcile",
         "restart",
         "harden",
@@ -158,6 +181,16 @@ def main():
     if not Path("/etc/pfem-gateway/managed-v1").is_file():
         return 65
     action = sys.argv[1]
+    if action == "quality":
+        sys.path.insert(0, "/usr/local/lib/pfem_gateway")
+        from gateways.quality import run
+
+        try:
+            result = run()
+        except Exception:
+            result = {"ok": False, "error": "Quality measurement unavailable"}
+        print(json.dumps(result))
+        return 0
     if action in {"apply-config", "commit-config", "rollback-config", "recover-config"}:
         sys.path.insert(0, "/usr/local/lib/pfem_gateway")
         from gateways.transactions import handle
