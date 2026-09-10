@@ -49,6 +49,7 @@ async def show_link(request: Request, identifier: int):
         headers={"Referrer-Policy": "no-referrer"},
         context={
             "link": link,
+            "qr": subscriptions.qr_data(link),
             "csrf": session["csrf_token"],
             "username": session["username"],
             "active": "groups",

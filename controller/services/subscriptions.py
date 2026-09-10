@@ -1,10 +1,13 @@
 import base64
 import hashlib
+import io
 import re
 import secrets
 import sqlite3
 import time
 from urllib.parse import quote
+
+import segno
 
 from controller.services.database import audit, connect
 from controller.services.groups import available_exit
@@ -74,6 +77,25 @@ def link(settings, identifier):
         raise ValueError("请先生成并应用订阅。")
     token = SecretStore(settings.secret_directory).get(row["token_ref"])["token"]
     return settings.public_url + "/sub/" + token
+
+
+def qr_data(link_value):
+    if not isinstance(link_value, str) or not link_value.startswith(
+        ("https://", "http://testserver/")
+    ):
+        raise ValueError("Invalid subscription link")
+    output = io.BytesIO()
+    segno.make_qr(link_value, error="h").save(
+        output,
+        kind="svg",
+        scale=6,
+        border=4,
+        dark="#111827",
+        light="#ffffff",
+        xmldecl=False,
+        svgns=True,
+    )
+    return "data:image/svg+xml;base64," + base64.b64encode(output.getvalue()).decode()
 
 
 def rotate(settings, identifier, actor):

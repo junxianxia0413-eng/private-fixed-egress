@@ -54,10 +54,19 @@ def test_subscription_link_requires_csrf_and_secrets_never_appear_in_inventory(
     assert client.post(f"/groups/{identifier}/activate", data={"csrf": token}).status_code == 303
     response = client.post(f"/groups/{identifier}/link", data={"csrf": token})
     assert response.status_code == 200 and response.headers["referrer-policy"] == "no-referrer"
+    assert "data:image/svg+xml;base64," in response.text and "扫描二维码" in response.text
     link = subscriptions.link(settings, identifier)
     assert link in response.text and link not in client.get("/api/groups").text
     assert client.get("/sub/not-a-token").status_code == 404
     assert client.get(link).status_code == 503
+
+
+def test_subscription_qr_contains_svg_without_putting_link_in_image_url():
+    link = "https://example.test/sub/" + "A" * 43
+    image = subscriptions.qr_data(link)
+    assert image.startswith("data:image/svg+xml;base64,")
+    svg = base64.b64decode(image.split(",", 1)[1])
+    assert b"<svg" in svg and b"<path" in svg and link.encode() not in svg
 
 
 def test_phone_entry_requires_lease_and_cannot_directly_dial_other_hosts(topology):
