@@ -32,7 +32,7 @@ async def authenticated_form(request):
     session = session_for(request)
     if not session or not session["admin_id"]:
         raise HTTPException(401, "请先登录。")
-    form = await request.form(max_fields=12, max_files=0)
+    form = await request.form(max_fields=64, max_files=0)
     if not all(isinstance(v, str) for v in form.values()):
         raise HTTPException(400, "Invalid form")
     check_csrf(request, session, form.get("csrf", ""))

@@ -91,7 +91,7 @@ def create_app(settings: Settings | None = None):
                 "X-Frame-Options": "DENY",
                 "Referrer-Policy": response.headers.get("Referrer-Policy", "same-origin"),
                 "Content-Security-Policy": (
-                    "default-src 'self'; style-src 'self'; script-src 'none'; "
+                    "default-src 'self'; style-src 'self'; script-src 'self'; "
                     "img-src 'self' data:; form-action 'self'; "
                     "frame-ancestors 'none'; base-uri 'none'"
                 ),

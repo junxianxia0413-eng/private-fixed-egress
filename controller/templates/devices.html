@@ -9,7 +9,7 @@
 {% block body %}
 <div class="dashboard">{% include "sidebar.html" %}<main class="main-content">
 <header class="topbar"><span>工作空间 / 设备</span><form action="/logout" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><span>{{ username }}</span><button class="quiet" type="submit">退出</button></form></header>
-<section class="page-heading"><div><p class="eyebrow">DEVICES</p><h1>设备</h1><p class="muted">登记设备，再为两台设备分配同一个订阅组。</p></div></section>
+<section class="page-heading"><div><p class="eyebrow">DEVICES</p><h1>设备</h1><p class="muted">集中管理设备；也可以在订阅组中输入新名称自动创建。</p></div></section>
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 <section class="gateway-grid">{% for d in devices %}<article class="panel gateway-card">
 <div class="section-heading"><h2>{{ d.name }}</h2><span class="pill">已登记</span></div>

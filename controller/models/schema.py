@@ -145,4 +145,15 @@ MIGRATIONS = [
         "CREATE UNIQUE INDEX active_alert ON alerts(fingerprint) WHERE resolved_at IS NULL",
         "CREATE INDEX alert_history ON alerts(resolved_at,last_seen)",
     ],
+    [
+        """CREATE TABLE group_devices_v2 (
+            device_id INTEGER PRIMARY KEY REFERENCES devices(id),
+            group_id INTEGER NOT NULL REFERENCES subscription_groups(id),
+            slot INTEGER NOT NULL CHECK(slot BETWEEN 1 AND 20), UNIQUE(group_id,slot)
+        )""",
+        """INSERT INTO group_devices_v2(device_id,group_id,slot)
+            SELECT device_id,group_id,slot FROM group_devices""",
+        "DROP TABLE group_devices",
+        "ALTER TABLE group_devices_v2 RENAME TO group_devices",
+    ],
 ]

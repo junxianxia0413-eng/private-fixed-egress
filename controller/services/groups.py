@@ -7,6 +7,8 @@ from datetime import UTC, date, datetime
 
 from controller.services.database import audit, connect
 
+MAX_DEVICES = 20
+
 
 def available_exit(db, identifier):
     row = db.execute(
@@ -28,26 +30,91 @@ def available_exit(db, identifier):
     return row
 
 
+def form_values(data, key):
+    raw = data.getlist(key) if hasattr(data, "getlist") else data.get(key, [])
+    if isinstance(raw, str):
+        return [raw]
+    return list(raw) if isinstance(raw, (list, tuple)) else []
+
+
+def member_fields(data):
+    names = [value.strip() for value in form_values(data, "device_name")]
+    raw_ids = form_values(data, "device_id")
+    if not 1 <= len(names) <= MAX_DEVICES or any(not name or len(name) > 64 for name in names):
+        raise ValueError("订阅组需要 1–20 台设备，每个名称为 1–64 个字符。")
+    if len({name.casefold() for name in names}) != len(names):
+        raise ValueError("同一订阅组内的设备名称不能重复。")
+    if raw_ids and len(raw_ids) != len(names):
+        raise ValueError("设备信息不完整，请刷新页面后重试。")
+    raw_ids.extend([""] * (len(names) - len(raw_ids)))
+    identifiers = []
+    for value in raw_ids[: len(names)]:
+        try:
+            identifiers.append(int(value) if value else None)
+        except (TypeError, ValueError):
+            raise ValueError("设备标识无效，请刷新页面后重试。") from None
+    return list(zip(identifiers, names, strict=True))
+
+
+def resolve_members(db, fields, actor, group_id=None):
+    current = {
+        row[0]
+        for row in db.execute(
+            "SELECT device_id FROM group_devices WHERE group_id=?", (group_id,)
+        ).fetchall()
+    }
+    members = []
+    for supplied_id, name in fields:
+        if supplied_id is not None and supplied_id not in current:
+            raise ValueError("设备归属已变化，请刷新页面后重试。")
+        existing = db.execute("SELECT id FROM devices WHERE name=?", (name,)).fetchone()
+        if existing:
+            device_id = existing["id"]
+        elif supplied_id is not None:
+            before = db.execute("SELECT name FROM devices WHERE id=?", (supplied_id,)).fetchone()
+            db.execute("UPDATE devices SET name=? WHERE id=?", (name, supplied_id))
+            device_id = supplied_id
+            audit(
+                db,
+                actor,
+                "device.renamed.inline",
+                json.dumps(
+                    {"device_id": device_id, "before": before["name"], "after": name},
+                    ensure_ascii=False,
+                ),
+            )
+        else:
+            device_id = db.execute(
+                """INSERT INTO devices(name,type,platform,purpose,notes,created_at)
+                VALUES (?,'Phone','iOS','','',?)""",
+                (name, int(time.time())),
+            ).lastrowid
+            audit(
+                db,
+                actor,
+                "device.created.inline",
+                json.dumps({"device_id": device_id, "name": name}, ensure_ascii=False),
+            )
+        if device_id in members:
+            raise ValueError("同一台设备不能在订阅组中重复出现。")
+        members.append(device_id)
+    return members
+
+
 def register(settings, data, actor):
     name = data.get("name", "").strip()
     if not 1 <= len(name) <= 64:
         raise ValueError("组名称需为 1–64 个字符。")
     try:
         exit_id = int(data.get("exit_id", ""))
-        members = [int(data.get(key, "")) for key in ("device_one", "device_two")]
     except ValueError:
-        raise ValueError("请选择出口和两台设备。") from None
-    if members[0] == members[1]:
-        raise ValueError("必须选择两台不同的设备。")
+        raise ValueError("请选择固定出口。") from None
+    fields = member_fields(data)
     try:
         with connect(settings.database_path) as db:
             db.execute("BEGIN IMMEDIATE")
             available_exit(db, exit_id)
-            if (
-                db.execute("SELECT COUNT(*) FROM devices WHERE id IN (?,?)", members).fetchone()[0]
-                != 2
-            ):
-                raise ValueError("设备不存在。")
+            members = resolve_members(db, fields, actor)
             identifier = db.execute(
                 "INSERT INTO subscription_groups(name,exit_id,created_at) VALUES (?,?,?)",
                 (name, exit_id, int(time.time())),
@@ -65,7 +132,53 @@ def register(settings, data, actor):
             )
             return identifier
     except sqlite3.IntegrityError:
-        raise ValueError("组名称已存在，或所选设备已属于其他订阅组。") from None
+        raise ValueError("组名称已存在，或所选设备已经属于其他订阅组。") from None
+
+
+def update(settings, identifier, data, actor):
+    name = data.get("name", "").strip()
+    if not 1 <= len(name) <= 64:
+        raise ValueError("组名称需为 1–64 个字符。")
+    fields = member_fields(data)
+    try:
+        with connect(settings.database_path) as db:
+            db.execute("BEGIN IMMEDIATE")
+            group = db.execute(
+                "SELECT id,name FROM subscription_groups WHERE id=?", (identifier,)
+            ).fetchone()
+            if not group:
+                raise ValueError("未找到订阅组。")
+            before = [
+                dict(row)
+                for row in db.execute(
+                    """SELECT d.id,d.name FROM group_devices m JOIN devices d ON d.id=m.device_id
+                    WHERE m.group_id=? ORDER BY m.slot""",
+                    (identifier,),
+                )
+            ]
+            members = resolve_members(db, fields, actor, identifier)
+            db.execute("UPDATE subscription_groups SET name=? WHERE id=?", (name, identifier))
+            db.execute("DELETE FROM group_devices WHERE group_id=?", (identifier,))
+            for slot, device in enumerate(members, 1):
+                db.execute(
+                    "INSERT INTO group_devices(device_id,group_id,slot) VALUES (?,?,?)",
+                    (device, identifier, slot),
+                )
+            audit(
+                db,
+                actor,
+                "group.updated",
+                json.dumps(
+                    {
+                        "group_id": identifier,
+                        "before": {"name": group["name"], "devices": before},
+                        "after": {"name": name, "devices": members},
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+    except sqlite3.IntegrityError:
+        raise ValueError("组名称已存在，或所选设备已经属于其他订阅组。") from None
 
 
 def snapshot(settings):

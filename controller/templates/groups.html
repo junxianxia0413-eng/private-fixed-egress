@@ -1,19 +1,65 @@
-{% extends "base.html" %}{% block title %}订阅组 · Private Network{% endblock %}
-{% block body %}<div class="dashboard">{% include "sidebar.html" %}<main class="main-content">
-<header class="topbar"><span>工作空间 / 订阅组</span><form action="/logout" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><span>{{ username }}</span><button class="quiet" type="submit">退出</button></form></header>
-<section class="page-heading"><div><p class="eyebrow">SUBSCRIPTION GROUPS</p><h1>订阅组</h1><p class="muted">两台设备，共用一条固定出口线路。</p></div><a class="button-link" href="/groups">刷新状态</a></section>
-{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-{% if confirmation %}<section class="panel"><h2>确认更换 {{ confirmation.name }} 的出口</h2><p class="error">此操作可能改变两台手机的公网 IP。请核对新旧出口。</p>
-<dl class="facts"><div><dt>当前 ISP / IP</dt><dd>{{ confirmation.old.isp_name }} / {{ confirmation.old.expected_exit_ip }}</dd></div><div><dt>新 ISP / IP</dt><dd>{{ confirmation.new.isp_name }} / {{ confirmation.new.expected_exit_ip }}</dd></div></dl>
-<form action="/groups/{{ confirmation.group_id }}/confirm" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="confirmation" value="{{ confirmation.token }}"><button class="primary" type="submit">我确认更换出口</button> <a href="/groups">取消</a></form></section>{% endif %}
-<section class="gateway-grid">{% for g in groups %}<article class="panel gateway-card"><div class="section-heading"><h2>{{ g.name }}</h2><span class="pill">{{ '已配置' if g.state == 'READY' else '待应用' }}</span></div>
-<dl class="facts"><div><dt>设备</dt><dd>{% for d in g.devices %}{{ d.name }}{% if not loop.last %}<br>{% endif %}{% endfor %}</dd></div><div><dt>所选线路</dt><dd>{{ g.exit_name }}</dd></div><div><dt>固定 ISP</dt><dd>{{ g.isp_name }}</dd></div><div><dt>预期出口</dt><dd>{{ g.expected_exit_ip }}</dd></div></dl>
-{% if g.state != 'READY' %}<p class="fine">订阅配置尚未完成，不代表手机已经切换到所选出口。</p>{% endif %}
-<form action="/groups/{{ g.id }}/activate" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="primary" type="submit">生成 / 应用订阅</button></form>
-{% if g.state == 'READY' %}<form action="/groups/{{ g.id }}/link" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="quiet" type="submit">查看订阅链接</button></form>{% endif %}
-<details><summary>更换订阅链接</summary><p class="fine">旧链接立即失效；已导入的节点仍可连接。</p><form action="/groups/{{ g.id }}/rotate" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="quiet" type="submit">更换链接</button></form></details>
-<details><summary>更换出口</summary><form action="/groups/{{ g.id }}/change" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label>新线路<select name="exit_id">{% for e in exits %}<option value="{{ e.id }}" {{ 'selected' if e.id == g.exit_id else '' }}>{{ e.name }}</option>{% endfor %}</select></label><button class="quiet" type="submit">查看变更并确认</button></form></details>
-</article>{% else %}<article class="panel"><h2>创建第一个订阅组</h2><p class="muted">先登记两台设备，并准备已验证的出口线路。</p></article>{% endfor %}</section>
-<details class="panel add-gateway" {{ 'open' if not groups or error else '' }}><summary>＋ 创建订阅组</summary><form action="/groups/add" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><div class="form-grid"><label>组名称<input name="name" maxlength="64" required></label>
-{% for key,label in [('device_one','第一台设备'),('device_two','第二台设备')] %}<label>{{ label }}<select name="{{ key }}" required>{% for d in devices %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}</select></label>{% endfor %}<label>固定出口<select name="exit_id" required>{% for e in exits %}<option value="{{ e.id }}">{{ e.name }}</option>{% endfor %}</select></label></div><button class="primary" type="submit" {{ 'disabled' if devices|length < 2 or not exits else '' }}>创建订阅组</button></form></details>
-<footer>每台已登记设备属于一个组。共享订阅不能限制实际导入链接的物理设备数量。</footer></main></div>{% endblock %}
+{% extends "base.html" %}
+{% block title %}订阅组 · Private Network{% endblock %}
+{% block body %}
+<div class="dashboard">
+  {% include "sidebar.html" %}
+  <main class="main-content">
+    <header class="topbar"><span>工作空间 / 订阅组</span><form action="/logout" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><span>{{ username }}</span><button class="quiet" type="submit">退出</button></form></header>
+    <section class="page-heading"><div><p class="eyebrow">SUBSCRIPTION GROUPS</p><h1>订阅组</h1><p class="muted">一组可登记 1–20 台设备，共用一条固定出口线路。</p></div><a class="button-link" href="/groups">刷新状态</a></section>
+    {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+    {% if confirmation %}<section class="panel"><h2>确认更换 {{ confirmation.name }} 的出口</h2><p class="error">此操作可能改变组内设备的公网 IP。请核对新旧出口。</p>
+      <dl class="facts"><div><dt>当前 ISP / IP</dt><dd>{{ confirmation.old.isp_name }} / {{ confirmation.old.expected_exit_ip }}</dd></div><div><dt>新 ISP / IP</dt><dd>{{ confirmation.new.isp_name }} / {{ confirmation.new.expected_exit_ip }}</dd></div></dl>
+      <form action="/groups/{{ confirmation.group_id }}/confirm" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="confirmation" value="{{ confirmation.token }}"><button class="primary" type="submit">我确认更换出口</button> <a href="/groups">取消</a></form>
+    </section>{% endif %}
+
+    <datalist id="device-options">{% for d in devices %}<option value="{{ d.name }}"></option>{% endfor %}</datalist>
+    <section class="gateway-grid">
+    {% for g in groups %}<article class="panel gateway-card">
+      <div class="section-heading"><h2>{{ g.name }}</h2><span class="pill">{{ '已配置' if g.state == 'READY' else '待应用' }}</span></div>
+      <dl class="facts"><div><dt>设备</dt><dd>{% for d in g.devices %}{{ d.name }}{% if not loop.last %}<br>{% endif %}{% endfor %}</dd></div><div><dt>所选线路</dt><dd>{{ g.exit_name }}</dd></div><div><dt>固定 ISP</dt><dd>{{ g.isp_name }}</dd></div><div><dt>预期出口</dt><dd>{{ g.expected_exit_ip }}</dd></div></dl>
+      {% if g.state != 'READY' %}<p class="fine">订阅配置尚未完成，不代表设备已经切换到所选出口。</p>{% endif %}
+      <form action="/groups/{{ g.id }}/activate" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="primary" type="submit">生成 / 应用订阅</button></form>
+      {% if g.state == 'READY' %}<form action="/groups/{{ g.id }}/link" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="quiet" type="submit">查看订阅链接</button></form>{% endif %}
+      <details class="group-editor"><summary>编辑名称和设备</summary>
+        <form action="/groups/{{ g.id }}/edit" method="post" data-device-form><input type="hidden" name="csrf" value="{{ csrf }}">
+          <label>组名称<input name="name" maxlength="64" value="{{ g.name }}" required></label>
+          <div class="device-editor" data-device-list>
+          {% for d in g.devices %}<div class="device-row" data-device-row>
+            <label><span data-device-label>设备 {{ loop.index }}</span><input name="device_name" value="{{ d.name }}" list="device-options" maxlength="64" required></label>
+            <input type="hidden" name="device_id" value="{{ d.id }}">
+            <details class="device-menu"><summary aria-label="设备 {{ loop.index }} 操作">⋮</summary><button type="button" data-remove-device>删除</button></details>
+          </div>{% endfor %}
+          </div>
+          <button class="quiet add-device" type="button" data-add-device>＋ 添加设备</button>
+          <p class="fine">可直接改名；输入已有设备名称会绑定已有记录，输入新名称会自动创建设备。至少保留一台。</p>
+          <button class="primary" type="submit">保存名称和设备</button>
+        </form>
+      </details>
+      <details><summary>更换订阅链接</summary><p class="fine">旧链接立即失效；已导入的节点仍可连接。</p><form action="/groups/{{ g.id }}/rotate" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="quiet" type="submit">更换链接</button></form></details>
+      <details><summary>更换出口</summary><form action="/groups/{{ g.id }}/change" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label>新线路<select name="exit_id">{% for e in exits %}<option value="{{ e.id }}" {{ 'selected' if e.id == g.exit_id else '' }}>{{ e.name }}</option>{% endfor %}</select></label><button class="quiet" type="submit">查看变更并确认</button></form></details>
+    </article>{% else %}<article class="panel"><h2>创建第一个订阅组</h2><p class="muted">填写至少一台设备，并选择已经验证的出口线路。</p></article>{% endfor %}
+    </section>
+
+    <details class="panel add-gateway" {{ 'open' if not groups or error else '' }}><summary>＋ 创建订阅组</summary>
+      <form action="/groups/add" method="post" data-device-form><input type="hidden" name="csrf" value="{{ csrf }}">
+        <label>组名称<input name="name" maxlength="64" required></label>
+        <div class="device-editor" data-device-list><div class="device-row" data-device-row>
+          <label><span data-device-label>设备 1</span><input name="device_name" list="device-options" maxlength="64" required placeholder="例如：汽配手机 1"></label>
+          <input type="hidden" name="device_id" value="">
+          <details class="device-menu"><summary aria-label="设备 1 操作">⋮</summary><button type="button" data-remove-device>删除</button></details>
+        </div></div>
+        <button class="quiet add-device" type="button" data-add-device>＋ 添加设备</button>
+        <label>固定出口<select name="exit_id" required>{% for e in exits %}<option value="{{ e.id }}">{{ e.name }}</option>{% endfor %}</select></label>
+        <button class="primary" type="submit" {{ 'disabled' if not exits else '' }}>创建订阅组</button>
+      </form>
+    </details>
+    <template id="device-row-template"><div class="device-row" data-device-row>
+      <label><span data-device-label>设备</span><input name="device_name" list="device-options" maxlength="64" required placeholder="输入设备名称"></label>
+      <input type="hidden" name="device_id" value="">
+      <details class="device-menu"><summary aria-label="设备操作">⋮</summary><button type="button" data-remove-device>删除</button></details>
+    </div></template>
+    <footer>设备记录用于管理和审计；共享订阅链接本身不能识别实际导入它的物理设备数量。</footer>
+  </main>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/groups.js" defer></script>{% endblock %}

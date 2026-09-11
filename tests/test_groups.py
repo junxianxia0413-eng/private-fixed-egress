@@ -16,26 +16,97 @@ def subscription_data(settings, group_data):
     identifier = exits.register(settings, group_data, "admin")
     with connect(settings.database_path) as db:
         db.execute("UPDATE exit_groups SET applied=1")
-    one = devices.save(settings, {"name": "Phone-01", "platform": "iOS"}, "admin")
-    two = devices.save(settings, {"name": "Phone-02", "platform": "iOS"}, "admin")
+    devices.save(settings, {"name": "Phone-01", "platform": "iOS"}, "admin")
+    devices.save(settings, {"name": "Phone-02", "platform": "iOS"}, "admin")
     return {
         "name": "GROUP-01",
         "exit_id": str(identifier),
-        "device_one": str(one),
-        "device_two": str(two),
+        "device_name": ["Phone-01", "Phone-02"],
+        "device_id": ["", ""],
     }
 
 
-def test_exactly_two_devices_and_no_duplicate_membership(settings, subscription_data):
+def test_flexible_devices_and_no_duplicate_membership(settings, subscription_data):
     with pytest.raises(ValueError):
         groups.register(
-            settings, {**subscription_data, "device_two": subscription_data["device_one"]}, "admin"
+            settings,
+            {**subscription_data, "device_name": ["Phone-01", "Phone-01"]},
+            "admin",
         )
     groups.register(settings, subscription_data, "admin")
     with pytest.raises(ValueError):
         groups.register(settings, {**subscription_data, "name": "GROUP-02"}, "admin")
     rows = groups.snapshot(settings)
     assert len(rows) == 1 and len(rows[0]["devices"]) == 2
+
+
+def test_group_members_can_be_added_removed_and_renamed(settings, subscription_data):
+    identifier = groups.register(settings, subscription_data, "admin")
+    first = groups.snapshot(settings)[0]["devices"][0]
+    groups.update(
+        settings,
+        identifier,
+        {
+            "name": "汽配手机组",
+            "device_name": ["汽配手机 1"],
+            "device_id": [str(first["id"])],
+        },
+        "admin",
+    )
+    changed = groups.snapshot(settings)[0]
+    assert changed["name"] == "汽配手机组"
+    assert [device["name"] for device in changed["devices"]] == ["汽配手机 1"]
+
+    groups.update(
+        settings,
+        identifier,
+        {
+            "name": "汽配手机组",
+            "device_name": ["汽配手机 1", "新增手机"],
+            "device_id": [str(first["id"]), ""],
+        },
+        "admin",
+    )
+    assert [device["name"] for device in groups.snapshot(settings)[0]["devices"]] == [
+        "汽配手机 1",
+        "新增手机",
+    ]
+    with connect(settings.database_path) as db:
+        actions = {row[0] for row in db.execute("SELECT action FROM audit_events")}
+        assert {"device.renamed.inline", "device.created.inline", "group.updated"} <= actions
+
+
+def test_group_accepts_one_to_twenty_devices(settings, subscription_data):
+    groups.register(
+        settings,
+        {**subscription_data, "device_name": ["Only Phone"], "device_id": [""]},
+        "admin",
+    )
+    assert len(groups.snapshot(settings)[0]["devices"]) == 1
+
+    groups.register(
+        settings,
+        {
+            **subscription_data,
+            "name": "TWENTY",
+            "device_name": [f"Bulk Phone {number}" for number in range(20)],
+            "device_id": [""] * 20,
+        },
+        "admin",
+    )
+    assert len(groups.snapshot(settings)[1]["devices"]) == 20
+
+    with pytest.raises(ValueError, match="1–20"):
+        groups.register(
+            settings,
+            {
+                **subscription_data,
+                "name": "TOO-MANY",
+                "device_name": [f"Phone-{number}" for number in range(21)],
+                "device_id": [""] * 21,
+            },
+            "admin",
+        )
 
 
 def test_change_requires_one_time_confirmation_and_records_old_new_isp(
@@ -80,7 +151,23 @@ def test_group_pages_authentication_and_csrf(client, subscription_data):
     assert client.post("/groups/add", data=subscription_data).status_code == 403
     token = csrf(client.get("/groups"))
     assert client.post("/groups/add", data={**subscription_data, "csrf": token}).status_code == 303
-    assert "Phone-02" in client.get("/groups").text
+    page = client.get("/groups")
+    assert "Phone-02" in page.text
+    assert 'src="/static/groups.js"' in page.text
+    assert "script-src 'self'" in page.headers["content-security-policy"]
+    assert (
+        client.post(
+            "/groups/1/edit",
+            data={
+                "csrf": token,
+                "name": "GROUP-EDITED",
+                "device_name": ["Phone-01"],
+                "device_id": ["1"],
+            },
+        ).status_code
+        == 303
+    )
+    assert "GROUP-EDITED" in client.get("/groups").text
     assert (
         client.post(
             "/groups/1/confirm", data={"csrf": token, "confirmation": "invalid"}

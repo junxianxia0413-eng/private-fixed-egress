@@ -12,12 +12,7 @@ router = APIRouter()
 def page(request, session, error=None, status_code=200, confirmation=None):
     settings = request.app.state.settings
     with connect(settings.database_path) as db:
-        devices = [
-            dict(r)
-            for r in db.execute(
-                "SELECT id,name FROM devices WHERE id NOT IN (SELECT device_id FROM group_devices)"
-            )
-        ]
+        devices = [dict(r) for r in db.execute("SELECT id,name FROM devices ORDER BY name")]
         exits = [dict(r) for r in db.execute("SELECT id,name FROM exit_groups WHERE applied=1")]
     return templates.TemplateResponse(
         request=request,
@@ -72,6 +67,16 @@ async def change(request: Request, identifier: int):
     except ValueError as exc:
         return page(request, session, str(exc), 400)
     return page(request, session, confirmation=confirmation)
+
+
+@router.post("/groups/{identifier}/edit")
+async def edit(request: Request, identifier: int):
+    session, form = await authenticated_form(request)
+    try:
+        groups.update(request.app.state.settings, identifier, form, session["username"])
+    except ValueError as exc:
+        return page(request, session, str(exc), 400)
+    return RedirectResponse("/groups", status_code=303)
 
 
 @router.post("/groups/{identifier}/confirm")

@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% block title %}导入订阅 · Private Network{% endblock %}
 {% block body %}<div class="dashboard">{% include "sidebar.html" %}<main class="main-content">
-<section class="page-heading"><div><h1>两台手机，共用这个订阅</h1><p class="muted">可以扫码，也可以复制链接。订阅只包含一个固定出口节点。</p></div></section>
+<section class="page-heading"><div><h1>组内设备，共用这个订阅</h1><p class="muted">可以扫码，也可以复制链接。订阅只包含一个固定出口节点。</p></div></section>
 <section class="content-grid"><article class="panel"><h2>方法一：扫描二维码</h2>
 <img class="subscription-qr" src="{{ qr }}" alt="Shadowrocket 订阅二维码" width="300" height="300">
 <p>在另一台设备上打开此页面，用 iPhone 相机或 Shadowrocket 的扫码功能扫描。</p>
@@ -8,6 +8,6 @@
 <p>在 Shadowrocket 中添加类型为 Subscribe（订阅）的配置，然后粘贴这个地址。</p></article></section>
 <section class="panel">
 <p>连接时选择该节点，并使用“全局路由 → 代理”。请将 DNS 设置为经代理使用的 HTTPS DNS，避免本地 DNS 直连。</p>
-<p class="muted">当前入口支持 TCP；UDP 游戏、语音和部分应用功能尚未验证。请先在两台手机的浏览器中分别访问出口检测网站，核对固定 IP。</p>
+<p class="muted">当前入口支持 TCP；UDP 游戏、语音和部分应用功能尚未验证。请先在组内设备的浏览器中分别访问出口检测网站，核对固定 IP。</p>
 <p class="fine">持有链接即可导入节点，请妥善保管。更换订阅链接会使旧链接失效；已经导入的节点密码不会随链接更换而自动撤销。</p>
 <a class="button-link" href="/groups">返回订阅组</a></section></main></div>{% endblock %}
