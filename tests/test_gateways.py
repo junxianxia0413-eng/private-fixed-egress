@@ -81,6 +81,23 @@ def test_credentials_are_referenced_not_in_database_or_views(client, settings, d
     assert client.get("/api/gateways").json()["gateways"][0]["status"] == "NEW"
 
 
+def test_very_low_cpu_is_displayed_as_below_measurement_precision(client, settings, data):
+    gateway = register(settings, data, "admin")
+    health = {"cpu_percent": 0.0, "ram_percent": 43.2, "disk_percent": 28.5}
+    with connect(settings.database_path) as db:
+        db.execute(
+            "UPDATE gateways SET status='HEALTHY',health_json=?,"
+            "checked_at=CAST(strftime('%s','now') AS INTEGER) WHERE id=?",
+            (json.dumps(health), gateway),
+        )
+    login(client)
+
+    for path in ("/gateways", "/network"):
+        page = client.get(path).text
+        assert "&lt;1%" in page
+        assert "&amp;lt;1%" not in page
+
+
 def test_authentication_csrf_and_recovery_key_download(client, settings, data):
     gateway = register(settings, data, "admin")
     assert client.get("/gateways").status_code == 303

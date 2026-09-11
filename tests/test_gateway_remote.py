@@ -19,7 +19,35 @@ def remote(tmp_path, monkeypatch):
     config = tmp_path / "config.json"
     config.write_text('{"outbounds":[]}')
     monkeypatch.setattr(module, "CONFIG", str(config))
+    monkeypatch.setattr(module, "CPU_CACHE", tmp_path / "cpu.json")
     return module
+
+
+def test_cpu_uses_interval_since_previous_health_check(remote, monkeypatch):
+    remote.CPU_CACHE.write_text(json.dumps({"total": 1000, "idle": 900, "percent": 10.0}))
+    monkeypatch.setattr(remote, "cpu_times", lambda: (7000, 6780))
+    monkeypatch.setattr(remote.time, "sleep", lambda _: pytest.fail("unexpected short sample"))
+
+    assert remote.cpu_usage() == 2.0
+    assert json.loads(remote.CPU_CACHE.read_text())["percent"] == 2.0
+
+
+def test_cpu_keeps_last_average_when_checks_are_too_close(remote, monkeypatch):
+    remote.CPU_CACHE.write_text(json.dumps({"total": 1000, "idle": 990, "percent": 1.0}))
+    monkeypatch.setattr(remote, "cpu_times", lambda: (1050, 1040))
+    monkeypatch.setattr(remote.time, "sleep", lambda _: pytest.fail("unexpected short sample"))
+
+    assert remote.cpu_usage() == 1.0
+
+
+def test_first_cpu_check_uses_one_second_sample(remote, monkeypatch):
+    samples = iter(((1000, 900), (1100, 998)))
+    slept = []
+    monkeypatch.setattr(remote, "cpu_times", lambda: next(samples))
+    monkeypatch.setattr(remote.time, "sleep", slept.append)
+
+    assert remote.cpu_usage() == 2.0
+    assert slept == [1]
 
 
 def test_invalid_ssh_configuration_restores_previous_settings(remote, monkeypatch):

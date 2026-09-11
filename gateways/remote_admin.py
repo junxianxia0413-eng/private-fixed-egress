@@ -16,6 +16,8 @@ CORE = "/usr/local/bin/pfem-sing-box"
 SSH_CONFIG = Path("/etc/ssh/sshd_config.d/00-pfem-key-only.conf")
 SSH_BACKUP = Path("/etc/pfem-gateway/ssh-before-hardening.json")
 TIMER = "pfem-ssh-rollback"
+CPU_CACHE = Path("/run/pfem-gateway-cpu.json")
+CPU_MIN_TICKS = 100
 
 
 def network_metrics():
@@ -41,6 +43,53 @@ def network_metrics():
 
 def command(args, timeout=15):
     return subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
+
+
+def cpu_times():
+    values = [int(v) for v in Path("/proc/stat").read_text().splitlines()[0].split()[1:9]]
+    return sum(values), values[3] + values[4]
+
+
+def save_cpu_sample(total, idle, percent):
+    try:
+        CPU_CACHE.write_text(json.dumps({"total": total, "idle": idle, "percent": percent}))
+    except OSError:
+        pass
+
+
+def cpu_usage():
+    """Average CPU use since the previous health check, with a one-second first sample."""
+    total, idle = cpu_times()
+    try:
+        previous = json.loads(CPU_CACHE.read_text())
+        old_total, old_idle = int(previous["total"]), int(previous["idle"])
+        delta_total, delta_idle = total - old_total, idle - old_idle
+        if delta_total >= CPU_MIN_TICKS and 0 <= delta_idle <= delta_total:
+            percent = round(100 * (1 - delta_idle / delta_total), 1)
+            save_cpu_sample(total, idle, percent)
+            return percent
+        old_percent = previous.get("percent")
+        if (
+            delta_total >= 0
+            and isinstance(old_percent, (int, float))
+            and not isinstance(old_percent, bool)
+            and 0 <= old_percent <= 100
+        ):
+            return old_percent
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+
+    first_total, first_idle = total, idle
+    time.sleep(1)
+    total, idle = cpu_times()
+    delta_total, delta_idle = total - first_total, idle - first_idle
+    percent = (
+        round(100 * (1 - delta_idle / delta_total), 1)
+        if delta_total and 0 <= delta_idle <= delta_total
+        else 0
+    )
+    save_cpu_sample(total, idle, percent)
+    return percent
 
 
 def status():
@@ -72,15 +121,7 @@ def status():
     except OSError:
         pass
 
-    def cpu():
-        values = [int(v) for v in Path("/proc/stat").read_text().splitlines()[0].split()[1:9]]
-        return sum(values), values[3] + values[4]
-
-    first = cpu()
-    time.sleep(0.2)
-    last = cpu()
-    delta = last[0] - first[0]
-    usage = round(100 * (1 - (last[1] - first[1]) / delta), 1) if delta else 0
+    usage = cpu_usage()
     memory = {
         line.split(":")[0]: int(line.split()[1])
         for line in Path("/proc/meminfo").read_text().splitlines()
@@ -95,7 +136,7 @@ def status():
         "guard": guard,
         "probe_available": Path("/usr/local/sbin/pfem-isp-probe").is_file(),
         "config_api": Path("/usr/local/lib/pfem_gateway/gateways/transactions.py").is_file(),
-        "phone_api": 6 if Path("/usr/local/lib/pfem_gateway/gateways/quality.py").is_file() else 0,
+        "phone_api": 7 if Path("/usr/local/lib/pfem_gateway/gateways/quality.py").is_file() else 0,
         "healthy": active and firewall and valid and port and blocked,
         "ssh_key_only": key_only,
         "firewall": firewall,

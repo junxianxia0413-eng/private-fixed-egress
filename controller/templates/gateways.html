@@ -22,7 +22,8 @@
         {% if g.last_error %}<p class="error">{{ g.last_error }}</p>{% endif %}
         <dl class="facts">
           <div><dt>SSH / 网关服务</dt><dd>{{ '正常' if g.status == 'HEALTHY' else '待验证' }}</dd></div>
-          <div><dt>CPU / 内存</dt><dd>{{ g.health.get('cpu_percent','—') }}% / {{ g.health.get('ram_percent','—') }}%</dd></div>
+          {% set cpu = g.health.get('cpu_percent') %}{% set ram = g.health.get('ram_percent') %}
+          <div><dt>CPU / 内存</dt><dd>{{ ('<1%' if cpu == 0 else cpu ~ '%') if cpu is not none else '—' }} / {{ (ram ~ '%') if ram is not none else '—' }}</dd></div>
           <div><dt>磁盘使用</dt><dd>{{ g.health.get('disk_percent','—') }}%</dd></div>
           <div><dt>固定出口</dt><dd>尚未接入</dd></div>
         </dl>
