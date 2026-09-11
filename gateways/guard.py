@@ -1,14 +1,18 @@
-"""An independent Gateway lease; stale or failed probes close public ingress."""
+"""Independently verify each fixed exit and lease only its public client ports."""
 
 import fcntl
 import json
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from gateways.transactions import BASE, MANIFEST, PENDING, verify, write
+from gateways.transactions import BASE, MANIFEST, PENDING, ApplyError, verify, write
 
 LOCK = Path("/run/lock/pfem-gateway.lock")
+EVENTS = BASE / "guard-events.jsonl"
+FAILURE_LIMIT = 2
+GRACE_SECONDS = 70
 
 
 def lease(ports):
@@ -26,6 +30,88 @@ def lease(ports):
         raise RuntimeError("Lease update failed")
 
 
+def load_state():
+    try:
+        value = json.loads((BASE / "guard.json").read_text())
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def previous_groups(previous, manifest):
+    if previous.get("transaction") != manifest["transaction"]:
+        return {}
+    rows = previous.get("groups")
+    if isinstance(rows, list):
+        return {row.get("id"): row for row in rows if isinstance(row, dict)}
+    # Upgrade an old healthy state so the first transient failure still receives one grace cycle.
+    results = {
+        row.get("id"): row
+        for row in previous.get("results") or []
+        if isinstance(row, dict) and type(row.get("id")) is int
+    }
+    if previous.get("healthy") is not True:
+        return {}
+    return {
+        identifier: {
+            "id": identifier,
+            "healthy": True,
+            "ingress_open": True,
+            "failure_streak": 0,
+            "last_success_at": previous.get("checked_at"),
+            "result": result,
+        }
+        for identifier, result in results.items()
+    }
+
+
+def check(group):
+    try:
+        return {"result": verify([group], clients=False, attempts=2)[0]}
+    except ApplyError as exc:
+        error = str(exc)
+        return {
+            "error": "EXIT_IP_MISMATCH"
+            if error.startswith("EXIT_IP_MISMATCH:")
+            else "EXIT_UNAVAILABLE",
+            "hard": error.startswith("EXIT_IP_MISMATCH:"),
+        }
+    except Exception:
+        return {"error": "EXIT_UNAVAILABLE", "hard": False}
+
+
+def record_event(previous, state):
+    old = [
+        (row.get("id"), row.get("healthy"), row.get("ingress_open"), row.get("error"))
+        for row in previous.get("groups") or []
+        if isinstance(row, dict)
+    ]
+    new = [
+        (row.get("id"), row.get("healthy"), row.get("ingress_open"), row.get("error"))
+        for row in state["groups"]
+    ]
+    if old == new and not state["degraded"]:
+        return
+    try:
+        lines = EVENTS.read_text().splitlines()[-199:]
+    except OSError:
+        lines = []
+    event = {
+        "checked_at": state["checked_at"],
+        "transaction": state["transaction"],
+        "healthy": state["healthy"],
+        "degraded": state["degraded"],
+        "groups": [
+            {
+                key: row.get(key)
+                for key in ("id", "healthy", "ingress_open", "failure_streak", "error")
+            }
+            for row in state["groups"]
+        ],
+    }
+    write(EVENTS, ("\n".join([*lines, json.dumps(event)]) + "\n").encode())
+
+
 def run():
     with open(LOCK, "w") as lock:
         try:
@@ -35,26 +121,69 @@ def run():
         if PENDING.exists() or not MANIFEST.exists():
             return
         manifest = json.loads(MANIFEST.read_text())
-        groups = manifest["groups"]
-        ports = [20000 + c["id"] for g in groups if g["enabled"] for c in g.get("clients", [])]
+        groups = [group for group in manifest["groups"] if group["enabled"]]
+        previous = load_state()
+        old_groups = previous_groups(previous, manifest)
+        with ThreadPoolExecutor(max_workers=min(4, max(1, len(groups)))) as pool:
+            outcomes = list(pool.map(check, groups))
+        now = int(time.time())
+        states = []
+        open_ports = []
+        for group, outcome in zip(groups, outcomes, strict=True):
+            prior = old_groups.get(group["id"], {})
+            ports = [20000 + client["id"] for client in group.get("clients", [])]
+            if "result" in outcome:
+                row = {
+                    "id": group["id"],
+                    "healthy": True,
+                    "ingress_open": True,
+                    "failure_streak": 0,
+                    "last_success_at": now,
+                    "result": outcome["result"],
+                }
+            else:
+                streak = int(prior.get("failure_streak") or 0) + 1
+                last_success = prior.get("last_success_at")
+                grace = (
+                    not outcome.get("hard")
+                    and streak < FAILURE_LIMIT
+                    and prior.get("ingress_open") is True
+                    and type(last_success) is int
+                    and now - last_success <= GRACE_SECONDS
+                )
+                row = {
+                    "id": group["id"],
+                    "healthy": False,
+                    "ingress_open": grace,
+                    "failure_streak": streak,
+                    "last_success_at": last_success,
+                    "error": outcome["error"],
+                }
+                if grace and isinstance(prior.get("result"), dict):
+                    row["result"] = prior["result"]
+            if row["ingress_open"]:
+                open_ports.extend(ports)
+            states.append(row)
         state = {
-            "checked_at": int(time.time()),
+            "checked_at": now,
             "transaction": manifest["transaction"],
-            "healthy": False,
-            "results": [],
-            "public_ports": ports,
+            "healthy": all(row["ingress_open"] for row in states),
+            "degraded": any(not row["healthy"] for row in states),
+            "groups": states,
+            "results": [row["result"] for row in states if isinstance(row.get("result"), dict)],
+            "public_ports": open_ports,
         }
         try:
-            state["results"] = verify(groups, clients=False)
-            lease(ports)
-            state["healthy"] = True
+            lease(open_ports)
         except Exception:
+            state.update(healthy=False, degraded=True, public_ports=[], error="LEASE_UPDATE_FAILED")
+            for row in states:
+                row["ingress_open"] = False
             try:
                 lease([])
             except Exception:
-                # If nft is unavailable, expiration still closes entry within 70 seconds.
                 pass
-            state["error"] = "固定出口检查失败，手机入口已关闭或等待租约到期。"
+        record_event(previous, state)
         write(BASE / "guard.json", json.dumps(state).encode())
 
 

@@ -27,7 +27,15 @@ def health(client, action="status"):
         "phone_api": result.get("phone_api", False),
         "guard": {
             k: result.get("guard", {}).get(k)
-            for k in ("healthy", "checked_at", "results", "public_ports", "transaction")
+            for k in (
+                "healthy",
+                "degraded",
+                "checked_at",
+                "groups",
+                "results",
+                "public_ports",
+                "transaction",
+            )
         },
         **{
             k: result[k]
@@ -102,7 +110,7 @@ def deploy(gateway, store, stage):
             if (
                 not report["probe_available"]
                 or not report["config_api"]
-                or report["phone_api"] != 5
+                or report["phone_api"] != 6
             ):
                 raise GatewayError("网关需要更新管理组件。")
     except GatewayError:
