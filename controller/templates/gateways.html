@@ -27,7 +27,7 @@
           <div><dt>固定出口</dt><dd>尚未接入</dd></div>
         </dl>
         <p class="fine">最近检测：{{ g.last_check }}{% if g.stale %} · 状态需要更新{% endif %}</p>
-        {% if g.busy %}<p class="pill">任务处理中，请稍后刷新</p>{% endif %}
+        {% if g.busy %}<p class="pill">任务处理中，页面会自动更新</p>{% endif %}
         <div class="gateway-actions">
           {% for action,label in [('deploy','部署 / 修复'),('check','检测状态'),('restart','重启网关')] %}
           <form action="/gateways/{{ g.id }}/{{ action }}" method="post"><input type="hidden" name="csrf" value="{{ csrf }}">

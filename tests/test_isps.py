@@ -75,7 +75,10 @@ def test_isp_forms_require_auth_csrf_and_queue_tests(client, settings, isp_data)
     assert client.post("/isps/add", data=isp_data).status_code == 403
     token = csrf(client.get("/isps"))
     assert client.post("/isps/add", data={**isp_data, "csrf": token}).status_code == 303
-    assert isp_data["password"] not in client.get("/isps").text
+    pending_page = client.get("/isps")
+    assert 'http-equiv="refresh" content="1"' in pending_page.text
+    assert "页面会自动更新" in pending_page.text
+    assert isp_data["password"] not in pending_page.text
     assert isp_data["username"] not in client.get("/api/isps").text
     assert client.post("/isps/1/test", data={"csrf": token}).status_code == 400
     assert (

@@ -37,6 +37,7 @@ def page(request, session, error=None, status_code=200):
             "isps": isps,
             "error": error,
             "active": "exits",
+            "refresh_seconds": 2 if any(value["busy"] for value in groups) else None,
         },
     )
 

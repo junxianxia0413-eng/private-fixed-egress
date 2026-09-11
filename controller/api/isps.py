@@ -27,6 +27,7 @@ def page(request, session, error=None, status_code=200):
             "gateways": gateways,
             "error": error,
             "active": "isps",
+            "refresh_seconds": 1 if any(value["busy"] for value in values) else None,
         },
     )
 

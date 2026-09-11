@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% if refresh_seconds %}<meta http-equiv="refresh" content="{{ refresh_seconds }}">{% endif %}
   <title>{% block title %}Private Network{% endblock %}</title>
   <link rel="stylesheet" href="/static/app.css">
 </head>

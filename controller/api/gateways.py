@@ -23,6 +23,7 @@ def page(request, session, error=None, status_code=200):
             "jobs": jobs,
             "error": error,
             "active": "gateways",
+            "refresh_seconds": 2 if any(value["busy"] for value in gateways) else None,
         },
     )
 
