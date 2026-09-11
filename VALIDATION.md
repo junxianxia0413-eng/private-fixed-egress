@@ -7,7 +7,7 @@
 | 范围 | 证据/结果 |
 | --- | --- |
 | Phase 0 | 本地 Python 3.14 virtualenv；FastAPI + SQLite 启动与健康检查通过 |
-| 自动测试 | Windows Python 3.14：103 passed / 10 Linux-only skipped；Debian Python 3.11：113 passed |
+| 自动测试 | Windows Python 3.14：108 passed / 11 Linux-only skipped；Debian Python 3.11：119 passed |
 | 代码检查 | Ruff lint、format、Git diff whitespace 检查通过 |
 | 依赖 | 锁定运行/开发依赖；`pip check` 通过 |
 | 持久化 | 应用重建后会话仍有效；退出、到期、重设管理员使旧会话失效 |
@@ -86,6 +86,8 @@ Phase 0–9 已完成。Phase 10 只剩两台 iPhone 的真实链路验收。
 ## Phase 6 订阅组
 
 两台不同设备绑定、设备唯一归属、同网关出口切换的一次性确认与旧/新 ISP 审计通过测试。Windows 95 passed / 9 Linux-only skipped。此阶段登记不开放手机入口；待 Phase 7 生成并验证订阅。
+
+订阅组成员已扩展为 1–20 台。创建和编辑表单支持自由输入设备名称、已有设备名称联想、自动创建设备、逐项添加及竖三点菜单删除；组名称也可直接编辑。服务端继续检查名称、设备唯一归属、成员数量和 CSRF，数据库约束同步扩展到 20 个位置。生产 schema 10 已迁移，原 `PHONE-GROUP-01` 和两台设备保持不变。真实 Chrome 已完成删除一行、重新添加、保存和数据保留验证；1440px 与 390px 页面均无横向溢出。
 
 ## Phase 7 加密入口与订阅
 
