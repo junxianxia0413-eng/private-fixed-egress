@@ -91,6 +91,36 @@ def test_isp_forms_require_auth_csrf_and_queue_tests(client, settings, isp_data)
         assert db.execute("SELECT COUNT(*) FROM isp_jobs").fetchone()[0] == 1
 
 
+def test_isp_name_can_be_edited_without_changing_identity(client, settings, isp_data):  # noqa: F811
+    identifier = isps.register(settings, {**isp_data, "expected_exit_ip": "1.1.1.1"}, "admin")
+    login(client)
+    token = csrf(client.get("/isps"))
+    assert client.post(f"/isps/{identifier}/edit", data={"csrf": token}).status_code == 400
+    assert (
+        client.post(
+            f"/isps/{identifier}/edit",
+            data={"csrf": token, "name": "东京固定出口"},
+        ).status_code
+        == 303
+    )
+    values, _ = isps.snapshot(settings)
+    assert values[0]["name"] == "东京固定出口"
+    assert values[0]["expected_exit_ip"] == "1.1.1.1"
+    with connect(settings.database_path) as db:
+        action, detail = db.execute(
+            "SELECT action,detail FROM audit_events ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert action == "isp.renamed"
+        assert json.loads(detail)["before"] == "ISP-01"
+
+
+def test_isp_name_edit_rejects_duplicates(settings, isp_data):  # noqa: F811
+    first = isps.register(settings, isp_data, "admin")
+    isps.register(settings, {**isp_data, "name": "ISP-02", "host": "8.8.4.4"}, "admin")
+    with pytest.raises(ValueError, match="已存在"):
+        isps.rename(settings, first, "ISP-02", "admin")
+
+
 def test_minute_scheduler_does_not_duplicate_pending_or_active_jobs(
     settings, isp_data, monkeypatch
 ):  # noqa: F811

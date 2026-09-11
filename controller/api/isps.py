@@ -69,3 +69,13 @@ async def test_isp(request: Request, isp_id: int):
     except ValueError as exc:
         return page(request, session, str(exc), 400)
     return RedirectResponse("/isps", status_code=303)
+
+
+@router.post("/isps/{isp_id}/edit")
+async def edit_isp(request: Request, isp_id: int):
+    session, form = await authenticated_form(request)
+    try:
+        isps.rename(request.app.state.settings, isp_id, form.get("name", ""), session["username"])
+    except ValueError as exc:
+        return page(request, session, str(exc), 400)
+    return RedirectResponse("/isps", status_code=303)

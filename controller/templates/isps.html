@@ -26,6 +26,10 @@
       <p class="fine">最近检测：{{ isp.last_test }}{% if isp.stale %} · 状态需要更新{% endif %}</p>
       <form action="/isps/{{ isp.id }}/test" method="post" class="gateway-actions"><input type="hidden" name="csrf" value="{{ csrf }}">
         <button class="quiet" type="submit" {{ 'disabled' if isp.busy else '' }}>{{ '检测中，页面会自动更新' if isp.busy else '立即检测' }}</button></form>
+      <details><summary>编辑名称</summary><form action="/isps/{{ isp.id }}/edit" method="post">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><label>固定出口名称<input name="name" value="{{ isp.name }}" maxlength="64" required></label>
+        <p class="fine">只修改控制台显示名称，不改变代理地址、凭据、固定 IP 或已绑定线路。</p>
+        <button class="quiet" type="submit">保存名称</button></form></details>
     </article>{% else %}<article class="panel"><h2>添加第一个静态 ISP</h2><p class="muted">准备好商家的 SOCKS5 连接信息，即可测试真实出口。</p></article>{% endfor %}
     </section>
     <details class="panel add-gateway" {{ 'open' if not isps or error else '' }}><summary>＋ 添加 ISP</summary>

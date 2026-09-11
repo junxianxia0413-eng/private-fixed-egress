@@ -98,6 +98,30 @@ def register(settings, data, actor):
         raise
 
 
+def rename(settings, isp_id, name, actor):
+    name = name.strip()
+    if not 1 <= len(name) <= 64:
+        raise ValueError("名称需为 1–64 个字符。")
+    try:
+        with connect(settings.database_path) as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT name FROM isp_exits WHERE id=?", (isp_id,)).fetchone()
+            if not row:
+                raise ValueError("未找到 ISP。")
+            db.execute("UPDATE isp_exits SET name=? WHERE id=?", (name, isp_id))
+            audit(
+                db,
+                actor,
+                "isp.renamed",
+                json.dumps(
+                    {"isp_id": isp_id, "before": row["name"], "after": name},
+                    ensure_ascii=False,
+                ),
+            )
+    except sqlite3.IntegrityError:
+        raise ValueError("该 ISP 名称已存在。") from None
+
+
 def enqueue(settings, isp_id, actor):
     try:
         with connect(settings.database_path) as db:
