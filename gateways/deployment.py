@@ -102,7 +102,7 @@ def deploy(gateway, store, stage):
             if (
                 not report["probe_available"]
                 or not report["config_api"]
-                or report["phone_api"] != 4
+                or report["phone_api"] != 5
             ):
                 raise GatewayError("网关需要更新管理组件。")
     except GatewayError:
