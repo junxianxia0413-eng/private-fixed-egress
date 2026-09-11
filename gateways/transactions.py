@@ -147,7 +147,7 @@ def verify_client(group, client):
                 process.wait(timeout=5)
 
 
-def verify(groups, clients=True):
+def verify(groups, clients=True, attempts=1):
     results = []
     for group in groups:
         if not group["enabled"]:
@@ -157,12 +157,26 @@ def verify(groups, clients=True):
             "username": group["probe_username"],
             "password": group["probe_password"],
         }
-        measurements = request_all(config, "127.0.0.1")
-        if any(ip != group["expected_ip"] for ip, _ in measurements):
-            raise ApplyError("EXIT_IP_MISMATCH")
-        if clients:
-            for client in group.get("clients", []):
-                verify_client(group, client)
+        measurements = None
+        for attempt in range(attempts):
+            try:
+                measurements = request_all(config, "127.0.0.1")
+                if any(ip != group["expected_ip"] for ip, _ in measurements):
+                    raise ApplyError(f"EXIT_IP_MISMATCH:{group['id']}")
+                if clients:
+                    for client in group.get("clients", []):
+                        verify_client(group, client)
+                break
+            except ApplyError as exc:
+                if str(exc).startswith("EXIT_IP_MISMATCH:"):
+                    raise
+                measurements = None
+            except Exception:
+                measurements = None
+            if attempt + 1 < attempts:
+                time.sleep(0.5)
+        if measurements is None:
+            raise ApplyError(f"EXIT_CHECK_FAILED:{group['id']}") from None
         results.append(
             {
                 "id": group["id"],
@@ -223,7 +237,7 @@ def apply(payload):
                 "ok": True,
                 "committed": True,
                 "transaction": transaction,
-                "results": verify(groups),
+                "results": verify(groups, attempts=3),
                 "config_hash": hashlib.sha256(CONFIG.read_bytes()).hexdigest(),
             }
     config, firewall = render(groups, pwd.getpwnam("pfem-proxy").pw_uid)
@@ -284,7 +298,7 @@ def apply(payload):
         write(CONFIG, candidate.read_bytes(), 0o640, pwd.getpwnam("pfem-proxy").pw_gid)
         write(FIREWALL, candidate_fw.read_bytes())
         restart()
-        results = verify(groups)
+        results = verify(groups, attempts=3)
         # Keep existing firewall policy. Open only reserved, lease-protected phone ports.
         if shutil.which("ufw") and b"Status: active" in getattr(
             command(["ufw", "status"]), "stdout", b""

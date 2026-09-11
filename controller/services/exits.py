@@ -1,4 +1,5 @@
 import json
+import re
 import secrets
 import sqlite3
 import time
@@ -181,6 +182,15 @@ def apply_remote(settings, gateway, groups, transaction, stage):
         )
         if report.get("ok") is not True:
             if report.get("rolled_back") is True:
+                reason = str(report.get("error", ""))
+                match = re.fullmatch(r"EXIT_(CHECK_FAILED|IP_MISMATCH):(\d{1,4})", reason)
+                if match:
+                    detail = (
+                        "连接超时或请求失败" if match[1] == "CHECK_FAILED" else "出口 IP 不匹配"
+                    )
+                    raise GatewayError(
+                        f"出口线路 #{match[2]} {detail}；已恢复旧配置，请先检测对应 ISP。"
+                    )
                 raise GatewayError("新配置未通过出口验证，已恢复旧配置。")
             raise GatewayError("配置操作失败或回滚待确认；请检查网关，禁止当作正常出口使用。")
         expected = {g["id"]: g["expected_ip"] for g in groups if g["enabled"]}

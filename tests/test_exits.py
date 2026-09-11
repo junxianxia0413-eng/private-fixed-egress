@@ -98,6 +98,23 @@ def test_remote_mismatched_exit_never_commits(settings, group_data, monkeypatch)
     assert len(calls) == 1 and "apply-config" in calls[0]
 
 
+def test_remote_failure_identifies_the_exit_group(settings, group_data, monkeypatch):
+    identifier = exits.register(settings, group_data, "admin")
+    gateway, groups = exits.desired(
+        settings, {"gateway_id": int(group_data["gateway_id"]), "group_id": identifier}
+    )
+    monkeypatch.setattr(exits, "connect_gateway", lambda *a: MagicMock())
+    monkeypatch.setattr(
+        exits,
+        "execute",
+        lambda *a, **k: json.dumps(
+            {"ok": False, "rolled_back": True, "error": f"EXIT_CHECK_FAILED:{identifier}"}
+        ),
+    )
+    with pytest.raises(GatewayError, match=rf"出口线路 #{identifier} 连接超时"):
+        exits.apply_remote(settings, gateway, groups, "a" * 32, lambda _: None)
+
+
 def test_interrupted_jobs_never_stay_healthy(settings, group_data):
     identifier = exits.register(settings, group_data, "admin")
     exits.enqueue(settings, identifier, "admin")

@@ -59,6 +59,33 @@ def test_failed_actual_exit_probe_restores_all_old_files(remote, monkeypatch):
     assert not remote.MANIFEST.exists() and not remote.PENDING.exists()
 
 
+def test_verify_retries_transient_failure_and_reports_group(remote, monkeypatch):
+    calls = 0
+
+    def request(*_):
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise TimeoutError
+        return [("1.1.1.1", 10.0), ("1.1.1.1", 12.0)]
+
+    monkeypatch.setattr(remote, "request_all", request)
+    group = {
+        "id": 7,
+        "enabled": True,
+        "probe_username": "probe",
+        "probe_password": "p" * 32,
+        "expected_ip": "1.1.1.1",
+        "clients": [],
+    }
+    assert remote.verify([group], clients=False, attempts=3)[0]["id"] == 7
+    assert calls == 3
+
+    monkeypatch.setattr(remote, "request_all", lambda *_: (_ for _ in ()).throw(TimeoutError()))
+    with pytest.raises(remote.ApplyError, match="EXIT_CHECK_FAILED:7"):
+        remote.verify([group], clients=False, attempts=2)
+
+
 def test_failed_rollback_keeps_recovery_timer_and_snapshot(remote, monkeypatch):
     calls = []
     monkeypatch.setattr(
