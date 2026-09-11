@@ -7,6 +7,9 @@ https://__DOMAIN__ {
         }
     }
     encode zstd gzip
-    reverse_proxy 127.0.0.1:8000
+    route {
+        @pfem_ws path_regexp pfem_ws ^/pfem-ws/(13[0-9]{3}|14000)$
+        reverse_proxy @pfem_ws 127.0.0.1:{re.pfem_ws.1}
+        reverse_proxy 127.0.0.1:8000
+    }
 }
-

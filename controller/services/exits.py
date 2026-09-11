@@ -120,7 +120,8 @@ def desired(settings, job):
         )
         rows = db.execute(
             """SELECT e.*,i.host,i.port,i.secret_ref AS isp_secret,
-            i.expected_exit_ip,i.status AS isp_status,i.current_exit_ip AS isp_current,i.tested_at
+            i.expected_exit_ip,i.status AS isp_status,i.current_exit_ip AS isp_current,i.tested_at,
+            i.expires_on
             FROM exit_groups e JOIN isp_exits i ON e.isp_id=i.id
             WHERE e.gateway_id=? AND (e.applied=1 OR e.id=?) ORDER BY e.id""",
             (job["gateway_id"], job["group_id"]),
@@ -155,6 +156,7 @@ def desired(settings, job):
                 "port": row["port"],
                 **credentials,
                 "expected_ip": row["expected_exit_ip"],
+                "expires_on": row["expires_on"],
                 "probe_username": probe["username"],
                 "probe_password": probe["password"],
                 "clients": [

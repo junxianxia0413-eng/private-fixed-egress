@@ -34,6 +34,7 @@ def health(client, action="status"):
                 "groups",
                 "results",
                 "public_ports",
+                "tls_ports",
                 "transaction",
             )
         },
@@ -110,7 +111,7 @@ def deploy(gateway, store, stage):
             if (
                 not report["probe_available"]
                 or not report["config_api"]
-                or report["phone_api"] != 7
+                or report["phone_api"] != 8
             ):
                 raise GatewayError("网关需要更新管理组件。")
     except GatewayError:

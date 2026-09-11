@@ -1,7 +1,27 @@
 """Render only supported, fail-closed topology from validated structured inputs."""
 
+import hashlib
 import ipaddress
 import re
+import uuid
+from datetime import date
+
+TLS_PORT_BASE = 13000
+
+
+def client_uuid(password):
+    digest = hashlib.sha256(password.encode()).digest()[:16]
+    return str(uuid.UUID(bytes=digest, version=4))
+
+
+def tls_port(identifier):
+    if type(identifier) is not int or not 1 <= identifier <= 1000:
+        raise ValueError("Invalid subscription identity")
+    return TLS_PORT_BASE + identifier
+
+
+def tls_path(identifier):
+    return f"/pfem-ws/{tls_port(identifier)}"
 
 
 def address(value):
@@ -17,7 +37,7 @@ def validate(groups):
     seen = set()
     clients_seen = set()
     for group in groups:
-        if set(group) - {"clients"} != {
+        if set(group) - {"clients", "expires_on"} != {
             "id",
             "enabled",
             "server",
@@ -62,6 +82,12 @@ def validate(groups):
             ):
                 raise ValueError("Generated subscription credential required")
             clients_seen.add(client["id"])
+        expires_on = group.get("expires_on")
+        if expires_on is not None:
+            try:
+                date.fromisoformat(expires_on)
+            except (TypeError, ValueError):
+                raise ValueError("Invalid ISP expiry date") from None
     if len(clients_seen) > 20:
         raise ValueError("At most 20 subscriptions per Gateway")
     return groups
@@ -101,8 +127,9 @@ def render(groups, proxy_uid):
         inbound_tags = [tag]
         for client in group.get("clients", []):
             client_tag = f"subscription-{client['id']}"
+            tls_tag = f"subscription-tls-{client['id']}"
             public_ports.append(20000 + client["id"])
-            inbound_tags.append(client_tag)
+            inbound_tags.extend((client_tag, tls_tag))
             config["inbounds"].append(
                 {
                     "type": "shadowsocks",
@@ -112,6 +139,21 @@ def render(groups, proxy_uid):
                     "network": "tcp",
                     "method": "aes-128-gcm",
                     "password": client["password"],
+                }
+            )
+            config["inbounds"].append(
+                {
+                    "type": "vless",
+                    "tag": tls_tag,
+                    "listen": "127.0.0.1",
+                    "listen_port": tls_port(client["id"]),
+                    "users": [
+                        {
+                            "name": client_tag,
+                            "uuid": client_uuid(client["password"]),
+                        }
+                    ],
+                    "transport": {"type": "ws", "path": tls_path(client["id"])},
                 }
             )
         if group["enabled"]:
@@ -139,9 +181,13 @@ def render(groups, proxy_uid):
         "add table inet pfem_guard",
         "flush table inet pfem_guard",
         "add set inet pfem_guard pfem_live { type inet_service; flags timeout; timeout 70s; }",
+        "add set inet pfem_guard pfem_tls_live { type inet_service; }",
         "add chain inet pfem_guard input { type filter hook input priority -10; policy accept; }",
         'add rule inet pfem_guard input iifname != "lo" tcp dport 20001-21000 '
         "tcp dport != @pfem_live drop",
+        'add rule inet pfem_guard input iifname "lo" ip saddr 127.0.0.1 '
+        "tcp dport 13001-14000 tcp dport != @pfem_tls_live drop",
+        'add rule inet pfem_guard input iifname != "lo" tcp dport 13001-14000 drop',
         'add rule inet pfem_guard input iifname != "lo" tcp dport { '
         + ", ".join(map(str, ports))
         + " } drop",

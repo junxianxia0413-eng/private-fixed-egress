@@ -5,17 +5,16 @@ import json
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from gateways.transactions import BASE, MANIFEST, PENDING, ApplyError, verify, write
 
 LOCK = Path("/run/lock/pfem-gateway.lock")
 EVENTS = BASE / "guard-events.jsonl"
-FAILURE_LIMIT = 2
-GRACE_SECONDS = 70
 
 
-def lease(ports):
+def lease(ports, tls_ports):
     rules = "flush set inet pfem_guard pfem_live\n"
     if ports:
         rules += (
@@ -23,6 +22,22 @@ def lease(ports):
             + ", ".join(f"{port} timeout 70s" for port in ports)
             + " }\n"
         )
+    tls_set = (
+        subprocess.run(
+            ["/usr/sbin/nft", "list", "set", "inet", "pfem_guard", "pfem_tls_live"],
+            capture_output=True,
+            timeout=5,
+        ).returncode
+        == 0
+    )
+    if tls_set:
+        rules += "flush set inet pfem_guard pfem_tls_live\n"
+        if tls_ports:
+            rules += (
+                "add element inet pfem_guard pfem_tls_live { "
+                + ", ".join(map(str, tls_ports))
+                + " }\n"
+            )
     result = subprocess.run(
         ["/usr/sbin/nft", "-f", "-"], input=rules.encode(), capture_output=True, timeout=5
     )
@@ -44,7 +59,7 @@ def previous_groups(previous, manifest):
     rows = previous.get("groups")
     if isinstance(rows, list):
         return {row.get("id"): row for row in rows if isinstance(row, dict)}
-    # Upgrade an old healthy state so the first transient failure still receives one grace cycle.
+    # Upgrade a previously healthy state so transient upstream checks cannot close its ingress.
     results = {
         row.get("id"): row
         for row in previous.get("results") or []
@@ -66,6 +81,9 @@ def previous_groups(previous, manifest):
 
 
 def check(group):
+    expires_on = group.get("expires_on")
+    if expires_on and date.fromisoformat(expires_on) < datetime.now(UTC).date():
+        return {"error": "EXIT_EXPIRED", "hard": True}
     try:
         return {"result": verify([group], clients=False, attempts=2)[0]}
     except ApplyError as exc:
@@ -129,9 +147,9 @@ def run():
         now = int(time.time())
         states = []
         open_ports = []
+        open_tls_ports = []
         for group, outcome in zip(groups, outcomes, strict=True):
             prior = old_groups.get(group["id"], {})
-            ports = [20000 + client["id"] for client in group.get("clients", [])]
             if "result" in outcome:
                 row = {
                     "id": group["id"],
@@ -146,10 +164,8 @@ def run():
                 last_success = prior.get("last_success_at")
                 grace = (
                     not outcome.get("hard")
-                    and streak < FAILURE_LIMIT
                     and prior.get("ingress_open") is True
                     and type(last_success) is int
-                    and now - last_success <= GRACE_SECONDS
                 )
                 row = {
                     "id": group["id"],
@@ -162,7 +178,8 @@ def run():
                 if grace and isinstance(prior.get("result"), dict):
                     row["result"] = prior["result"]
             if row["ingress_open"]:
-                open_ports.extend(ports)
+                open_ports.extend(20000 + client["id"] for client in group.get("clients", []))
+                open_tls_ports.extend(13000 + client["id"] for client in group.get("clients", []))
             states.append(row)
         state = {
             "checked_at": now,
@@ -172,15 +189,22 @@ def run():
             "groups": states,
             "results": [row["result"] for row in states if isinstance(row.get("result"), dict)],
             "public_ports": open_ports,
+            "tls_ports": open_tls_ports,
         }
         try:
-            lease(open_ports)
+            lease(open_ports, open_tls_ports)
         except Exception:
-            state.update(healthy=False, degraded=True, public_ports=[], error="LEASE_UPDATE_FAILED")
+            state.update(
+                healthy=False,
+                degraded=True,
+                public_ports=[],
+                tls_ports=[],
+                error="LEASE_UPDATE_FAILED",
+            )
             for row in states:
                 row["ingress_open"] = False
             try:
-                lease([])
+                lease([], [])
             except Exception:
                 pass
         record_event(previous, state)

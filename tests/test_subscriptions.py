@@ -1,13 +1,14 @@
 # ruff: noqa: F811
 import base64
 import json
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import pytest
 
 from controller.services import groups, subscriptions
 from controller.services.database import connect
 from controller.services.secrets import SecretStore
-from gateways.configuration import render, validate
+from gateways.configuration import client_uuid, render, validate
 from tests.test_controller import csrf, login
 from tests.test_exits import group_data, topology  # noqa: F401
 from tests.test_gateways import client, data, settings  # noqa: F401
@@ -29,12 +30,23 @@ def test_subscription_has_one_gateway_node_and_rotated_token_is_revoked(
         group = dict(db.execute("SELECT * FROM subscription_groups").fetchone())
         assert token not in "\n".join(db.iterdump())
     content = base64.b64decode(subscriptions.payload(settings, token)).decode()
-    assert len(content.strip().splitlines()) == 1 and content.startswith("ss://")
-    assert "@8.8.8.8:20001#" in content
-    encoded = content.split("ss://")[1].split("@")[0]
-    credentials = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)).decode()
+    assert len(content.strip().splitlines()) == 1 and content.startswith("vless://")
+    node = urlsplit(content.strip())
     password = SecretStore(settings.secret_directory).get(group["client_ref"])["password"]
-    assert credentials == "aes-128-gcm:" + password and isp_data["password"] not in credentials
+    query = parse_qs(node.query)
+    assert node.hostname == "8.8.8.8" and node.port == 443
+    assert node.username == client_uuid(password)
+    assert query == {
+        "encryption": ["none"],
+        "security": ["tls"],
+        "type": ["ws"],
+        "host": ["8.8.8.8"],
+        "sni": ["8.8.8.8"],
+        "peer": ["8.8.8.8"],
+        "path": ["/pfem-ws/13001"],
+    }
+    assert unquote(node.fragment).endswith("443 稳定通道")
+    assert isp_data["password"] not in content and password not in content
     subscriptions.rotate(settings, identifier, "admin")
     assert subscriptions.payload(settings, token) is None
     assert subscriptions.payload(
@@ -73,10 +85,19 @@ def test_phone_entry_requires_lease_and_cannot_directly_dial_other_hosts(topolog
     topology[0]["clients"] = [{"id": 1, "password": "A" * 43}]
     config, firewall = render(topology, 995)
     inbound = next(i for i in config["inbounds"] if i["type"] == "shadowsocks")
+    tls_inbound = next(i for i in config["inbounds"] if i["type"] == "vless")
     assert inbound["listen_port"] == 20001 and inbound["network"] == "tcp"
-    assert "timeout 70s" in firewall and "tcp dport != @pfem_live drop" in firewall
+    assert tls_inbound["listen"] == "127.0.0.1" and tls_inbound["listen_port"] == 13001
+    assert tls_inbound["transport"] == {"type": "ws", "path": "/pfem-ws/13001"}
+    assert "pfem_tls_live { type inet_service; }" in firewall
+    assert "tcp dport != @pfem_live drop" in firewall
+    assert "tcp dport != @pfem_tls_live drop" in firewall
     assert "ct direction reply tcp sport { 20001 } accept" in firewall
-    assert config["route"]["rules"][1]["inbound"] == ["exit-1", "subscription-1"]
+    assert config["route"]["rules"][1]["inbound"] == [
+        "exit-1",
+        "subscription-1",
+        "subscription-tls-1",
+    ]
     assert all(o["type"] == "socks" for o in config["outbounds"])
     topology.append({**topology[0], "id": 2})
     with pytest.raises(ValueError):

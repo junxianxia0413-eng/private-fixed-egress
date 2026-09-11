@@ -88,7 +88,15 @@ def probe(settings, gateway, kind):
             raise ValueError("Invalid guard report")
         safe["guard"] = {
             k: guard.get(k)
-            for k in ("healthy", "degraded", "checked_at", "groups", "results", "public_ports")
+            for k in (
+                "healthy",
+                "degraded",
+                "checked_at",
+                "groups",
+                "results",
+                "public_ports",
+                "tls_ports",
+            )
         }
         return safe
     if report.get("ok") is not True or not isinstance(report.get("measurements"), list):

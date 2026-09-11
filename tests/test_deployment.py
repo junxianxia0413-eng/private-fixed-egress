@@ -8,6 +8,8 @@ def test_dns_config_remains_supported(target):
     assert target_kind(target) == "dns"
     assert f"{target} {{" in render_caddy(target)
     assert "profile shortlived" not in render_caddy(target)
+    assert "path_regexp pfem_ws" in render_caddy(target)
+    assert "127.0.0.1:{re.pfem_ws.1}" in render_caddy(target)
 
 
 def test_ip_uses_public_acme_with_shortlived_profile():

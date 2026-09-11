@@ -5,13 +5,14 @@ import re
 import secrets
 import sqlite3
 import time
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import segno
 
 from controller.services.database import audit, connect
 from controller.services.groups import available_exit
 from controller.services.secrets import SecretStore
+from gateways.configuration import client_uuid, tls_path
 
 
 def queue(db, identifier, actor):
@@ -145,6 +146,19 @@ def payload(settings, token):
     ):
         raise ValueError("出口配置尚未就绪或检查异常，请稍后重试。")
     password = SecretStore(settings.secret_directory).get(row["client_ref"])["password"]
-    user = base64.urlsafe_b64encode(("aes-128-gcm:" + password).encode()).decode().rstrip("=")
-    node = f"ss://{user}@{row['host']}:{20000 + row['id']}#{quote(row['name'], safe='')}"
+    query = urlencode(
+        {
+            "encryption": "none",
+            "security": "tls",
+            "type": "ws",
+            "host": row["host"],
+            "sni": row["host"],
+            "peer": row["host"],
+            "path": tls_path(row["id"]),
+        }
+    )
+    node = (
+        f"vless://{client_uuid(password)}@{row['host']}:443?{query}#"
+        f"{quote(row['name'] + ' · 443 稳定通道', safe='')}"
+    )
     return base64.b64encode((node + "\n").encode()).decode()
