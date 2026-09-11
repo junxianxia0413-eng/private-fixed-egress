@@ -108,3 +108,9 @@ Phase 0–9 已完成。Phase 10 只剩两台 iPhone 的真实链路验收。
 ## Phase 10 真实手机验收
 
 未执行。需要两台 iPhone 在 Shadowrocket 导入同一私密订阅，分别验证固定出口 IP、Wi-Fi/蜂窝延迟、IPv6/DNS 行为和异常恢复；Windows 或 Chrome 视口不能替代该项。
+
+## Shadowrocket 间歇超时修复
+
+生产日志确认 VPS 资源和 TCP 建连正常：两条 ISP 各 100 次 TCP 连接均成功，中位数 1.13 ms 与 1.38 ms。过去 24 小时中 `ISP-01` 的上游 SOCKS 出现 15 次连接超时和 9 次 EOF，而第二条 ISP 没有同类错误。旧守卫在任一出口一次探测失败时清空全部手机端口租约，因此第一条 ISP 的抖动会连带造成第二个 Shadowrocket 节点超时。
+
+守卫现已改为逐出口并行检查和独立端口租约：每次检测内部重试两次；一次临时失败保留短暂租约，第二个连续失败只关闭对应出口；出口 IP 不匹配仍立即关闭。状态变化以无凭据 JSONL 保留最近 200 条。Windows 108 passed / 12 Linux-only skipped；Debian 120 passed。生产 Gateway API 6 已部署，连续多个守卫周期均保持两条线路独立开放；两个真实订阅分别经过加密入口并由两个 HTTPS 来源核对固定出口成功。
