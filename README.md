@@ -12,7 +12,7 @@
 3. SOCKS ISP 管理与 Exit Identity Guard
 4. Exit Group：配置校验、备份、应用、出口验证和回滚
 5. Device 管理
-6. Subscription Group 与两个设备绑定
+6. Subscription Group 与 1–20 台设备绑定（当前业务组使用两台）
 7. Shadowrocket 订阅与令牌轮换
 8. Health Monitor
 9. History 与 Alerts
@@ -57,7 +57,7 @@ Debian 12 部署步骤见 [deploy/README.md](deploy/README.md)。
 开发任务见 [GitHub Issues](https://github.com/junxianxia0413-eng/private-fixed-egress/issues)。
 当前连接没有 Milestone 创建能力，暂用 Phase 0–10 共 11 个 Issue 跟踪。
 
-当前状态：Phase 0–8 已完成并部署到真实 Debian 12 VPS。控制台、Gateway、静态 SOCKS5 ISP、出口身份守卫、两台设备订阅组、Shadowrocket 单节点订阅、入口租约和网络监控均已通过自动化与生产验证。
+当前状态：Phase 0–8 已完成并部署到真实 Debian 12 VPS。控制台、Gateway、静态 SOCKS5 ISP、出口身份守卫、可编辑设备订阅组、Shadowrocket 单节点订阅、入口租约和网络监控均已通过自动化与生产验证。
 
 最简单的使用流程是：登录控制台 → 打开“设备”登记两台手机 → 打开“订阅组”生成链接 → 两台 iPhone 在 Shadowrocket 导入同一个链接 → 选择该节点并打开全局代理。两台手机应看到同一个固定出口 IP。详细手机步骤和当前私密链接保存在部署输出目录的 `手机接入说明.md`，不会提交到 Git。
 
