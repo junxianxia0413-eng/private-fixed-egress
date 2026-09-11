@@ -33,7 +33,8 @@ def remote(tmp_path, monkeypatch):
     monkeypatch.setattr(module.os, "chown", lambda *a: None)
     monkeypatch.setattr(module, "command", lambda *a, **k: SimpleNamespace(returncode=0))
     monkeypatch.setattr(module, "restart", lambda: None)
-    monkeypatch.setattr(module, "verify", lambda groups: [])
+    monkeypatch.setattr(module, "_test_actual_verify", module.verify, raising=False)
+    monkeypatch.setattr(module, "verify", lambda groups, *args, **kwargs: [])
     return module
 
 
@@ -78,12 +79,12 @@ def test_verify_retries_transient_failure_and_reports_group(remote, monkeypatch)
         "expected_ip": "1.1.1.1",
         "clients": [],
     }
-    assert remote.verify([group], clients=False, attempts=3)[0]["id"] == 7
+    assert remote._test_actual_verify([group], clients=False, attempts=3)[0]["id"] == 7
     assert calls == 3
 
     monkeypatch.setattr(remote, "request_all", lambda *_: (_ for _ in ()).throw(TimeoutError()))
     with pytest.raises(remote.ApplyError, match="EXIT_CHECK_FAILED:7"):
-        remote.verify([group], clients=False, attempts=2)
+        remote._test_actual_verify([group], clients=False, attempts=2)
 
 
 def test_failed_rollback_keeps_recovery_timer_and_snapshot(remote, monkeypatch):
