@@ -1,13 +1,13 @@
 # 阶段验收记录
 
-验证日期：2026-09-10 UTC。
+验证日期：2026-09-11 UTC。
 
 ## 已验证
 
 | 范围 | 证据/结果 |
 | --- | --- |
 | Phase 0 | 本地 Python 3.14 virtualenv；FastAPI + SQLite 启动与健康检查通过 |
-| 自动测试 | Windows Python 3.14：108 passed / 11 Linux-only skipped；Debian Python 3.11：119 passed |
+| 自动测试 | Windows Python 3.14：111 passed / 15 Linux-only skipped；Debian Python 3.11：127 passed |
 | 代码检查 | Ruff lint、format、Git diff whitespace 检查通过 |
 | 依赖 | 锁定运行/开发依赖；`pip check` 通过 |
 | 持久化 | 应用重建后会话仍有效；退出、到期、重设管理员使旧会话失效 |
@@ -38,11 +38,10 @@ Chrome 自动化默认关闭组件更新时曾出现 CT 校验错误；恢复正
 
 - 域名模式的 DNS/证书未在现场执行；本次验证采用无域名的公网 IPv4 模式。
 - Gateway 已完成现场部署；实际 SOCKS5 ISP 已通过认证、双源出口和后台复查。
-- 设备管理、订阅、周期监控、History/Alerts 已完成并部署；仍需两台 iPhone 实机验收。
-- 未使用真实 iPhone/Shadowrocket，MVP.md 的现场 Test 01–10 全部待执行。
+- 设备管理、订阅、周期监控、History/Alerts 已完成并部署；两台 iPhone 已完成首次导入和连接验收。
 - 未测试真实 Safari；390px Chrome 视口验证不是 iPhone 实机验收。
 
-Phase 0–9 已完成。Phase 10 只剩两台 iPhone 的真实链路验收。
+Phase 0–10 已完成；Wi-Fi/蜂窝切换、IPv6/DNS 和 UDP 游戏按实际使用环境继续观察。
 
 ## Phase 2 开发验证
 
@@ -92,7 +91,7 @@ Phase 0–9 已完成。Phase 10 只剩两台 iPhone 的真实链路验收。
 
 ## Phase 7 加密入口与订阅
 
-实现单节点 SIP002/Base64 订阅、秘密引用、令牌轮换与旧链接撤销；配置事务通过真实加密客户端验证出口。Gateway 独立探针每次完成后 15 秒复查；入口租约 70 秒未刷新即关闭。TCP-only，手机和 UDP 尚未实测。Windows 98 passed / 10 Linux-only skipped；生产验证进行中。
+实现单节点 Base64 订阅、秘密引用、令牌轮换与旧链接撤销；配置事务通过真实加密客户端验证出口。当前手机节点使用 VLESS + WebSocket + TLS 的 HTTPS 443 通道。Gateway 独立探针每 15 秒复查，已验证的 443 入口授权持久保存。TCP 已通过生产测试，UDP 游戏仍需按应用实测。
 
 登录后可同时显示订阅二维码和复制链接，两种方式包含同一条私密订阅地址。生产二维码截图已用独立 ZXing 解码器回读，结果与当前订阅地址完全一致；私密令牌未写入仓库或日志。
 
@@ -108,16 +107,22 @@ Phase 0–9 已完成。Phase 10 只剩两台 iPhone 的真实链路验收。
 
 ## Phase 10 真实手机验收
 
-未执行。需要两台 iPhone 在 Shadowrocket 导入同一私密订阅，分别验证固定出口 IP、Wi-Fi/蜂窝延迟、IPv6/DNS 行为和异常恢复；Windows 或 Chrome 视口不能替代该项。
+两台真实 iPhone 已成功导入订阅并取得固定出口；随后也复现了旧高端口节点同时超时。现场抓包显示手机侧 SYN 到达服务器，服务器持续回复 SYN-ACK，但客户端没有完成 ACK，证实高端口回程在接入路径中被丢弃。Wi-Fi/蜂窝切换、IPv6/DNS 和 UDP 游戏仍需按具体使用环境继续观察。
 
 ## Shadowrocket 间歇超时修复
 
 生产日志确认 VPS 资源和 TCP 建连正常：两条 ISP 各 100 次 TCP 连接均成功，中位数 1.13 ms 与 1.38 ms。过去 24 小时中 `ISP-01` 的上游 SOCKS 出现 15 次连接超时和 9 次 EOF，而第二条 ISP 没有同类错误。旧守卫在任一出口一次探测失败时清空全部手机端口租约，因此第一条 ISP 的抖动会连带造成第二个 Shadowrocket 节点超时。
 
-守卫现已改为逐出口并行检查和独立端口租约：每次检测内部重试两次；一次临时失败保留短暂租约，第二个连续失败只关闭对应出口；出口 IP 不匹配仍立即关闭。状态变化以无凭据 JSONL 保留最近 200 条。Windows 108 passed / 12 Linux-only skipped；Debian 120 passed。生产 Gateway API 6 已部署，连续多个守卫周期均保持两条线路独立开放；两个真实订阅分别经过加密入口并由两个 HTTPS 来源核对固定出口成功。
+守卫现已改为逐出口并行检查和独立入口授权：每次检测内部重试两次；已成功验证的线路在普通检测超时后保持开放；出口 IP 不匹配或到期日过期仍立即关闭。443 入口授权不依赖 70 秒续租，即使守卫进程暂时没有运行也不会自行失效。状态变化以无凭据 JSONL 保留最近 200 条。
 
 ## 低负载 CPU 显示修复
 
 旧版使用 0.2 秒 `/proc/stat` 差值；单 vCPU、100 Hz 计数下只有约 20 个刻度，低负载结果会量化为 0%、5% 等跳变。生产服务器五次旧采样为 0%、0%、5%、5%、0%，同时五次一秒样本为约 1%–2%，内存为约 43%，服务负载正常。
 
 Gateway API 7 改用相邻健康检查之间的累计 CPU 差值，首次采样使用一秒窗口；过短的重复检查沿用上一段有效平均值。界面将精确零值显示为 `<1%` 并说明采样含义。Windows 111 passed / 15 Linux-only skipped；Linux helper 测试覆盖跨检查平均、短间隔复用及首次采样。
+
+## HTTPS 443 手机通道修复
+
+订阅节点由公网高端口 Shadowsocks TCP 改为 VLESS + WebSocket + TLS，经现有 Caddy 公网 HTTPS 443 入口转发到 loopback 监听器。Caddy 路径只允许映射到保留的 13001–14000 本地端口，nftables 再按已验证出口授权对应端口；旧高端口入口继续保留用于兼容和事务验证。
+
+Windows Python 3.14 为 111 passed / 15 Linux-only skipped；Debian Python 3.11 为 127 passed。sing-box 1.14.0 候选配置检查、Caddy 配置检查和生产重载均通过。两条生产订阅在独立网络上各完成 10 次固定出口 HTTPS 请求，服务重启后又各完成 10 次，共 40/40 成功；每次结果均等于对应锁定出口。Controller、Caddy、Gateway 和守卫计时器重启后均为 active，443 本地授权仍存在且没有自动超时字段。
