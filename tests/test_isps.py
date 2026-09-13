@@ -8,6 +8,7 @@ import pytest
 from controller.services import isps
 from controller.services.database import connect
 from controller.services.gateways import register as register_gateway
+from controller.services.secrets import SecretStore
 from gateways import remote_probe
 from gateways.ssh import GatewayError
 from tests.test_controller import csrf, login
@@ -119,6 +120,91 @@ def test_isp_name_edit_rejects_duplicates(settings, isp_data):  # noqa: F811
     isps.register(settings, {**isp_data, "name": "ISP-02", "host": "8.8.4.4"}, "admin")
     with pytest.raises(ValueError, match="已存在"):
         isps.rename(settings, first, "ISP-02", "admin")
+
+
+def test_complete_socks5_link_is_parsed_and_credentials_stay_secret(settings, isp_data):  # noqa: F811
+    identifier = isps.register(
+        settings,
+        {
+            "name": "粘贴导入",
+            "gateway_id": isp_data["gateway_id"],
+            "proxy_uri": "socks5://user%2B01:p%40ssword@8.8.4.4:8443",
+        },
+        "admin",
+    )
+    with connect(settings.database_path) as db:
+        row = db.execute(
+            "SELECT host,port,secret_ref FROM isp_exits WHERE id=?", (identifier,)
+        ).fetchone()
+    assert (row["host"], row["port"]) == ("8.8.4.4", 8443)
+    assert SecretStore(settings.secret_directory).get(row["secret_ref"]) == {
+        "username": "user+01",
+        "password": "p@ssword",
+    }
+
+
+def test_connection_edit_validates_then_atomically_replaces_secret(settings, isp_data, monkeypatch):  # noqa: F811
+    identifier = isps.register(settings, {**isp_data, "expected_exit_ip": "1.1.1.1"}, "admin")
+    with connect(settings.database_path) as db:
+        before = dict(db.execute("SELECT * FROM isp_exits WHERE id=?", (identifier,)).fetchone())
+    monkeypatch.setattr(
+        isps,
+        "probe_connection",
+        lambda *_: {"exit_ip": "1.1.1.1", "latency_ms": 87.5},
+    )
+    isps.update_connection(
+        settings,
+        identifier,
+        {"proxy_uri": "socks5://new-user:new-password@8.8.4.4:1080"},
+        "admin",
+    )
+    with connect(settings.database_path) as db:
+        after = dict(db.execute("SELECT * FROM isp_exits WHERE id=?", (identifier,)).fetchone())
+        detail = db.execute(
+            "SELECT detail FROM audit_events WHERE action='isp.connection.updated'"
+        ).fetchone()[0]
+    assert (after["host"], after["port"], after["current_exit_ip"]) == (
+        "8.8.4.4",
+        1080,
+        "1.1.1.1",
+    )
+    assert after["secret_ref"] != before["secret_ref"]
+    assert not SecretStore(settings.secret_directory).path(before["secret_ref"]).exists()
+    assert "new-password" not in detail
+
+
+def test_failed_connection_edit_keeps_original_connection(settings, isp_data, monkeypatch):  # noqa: F811
+    identifier = isps.register(settings, {**isp_data, "expected_exit_ip": "1.1.1.1"}, "admin")
+    with connect(settings.database_path) as db:
+        before = dict(db.execute("SELECT * FROM isp_exits WHERE id=?", (identifier,)).fetchone())
+    monkeypatch.setattr(
+        isps,
+        "probe_connection",
+        lambda *_: {"exit_ip": "8.8.4.4", "latency_ms": 90},
+    )
+    with pytest.raises(ValueError, match="已保留"):
+        isps.update_connection(
+            settings,
+            identifier,
+            {"proxy_uri": "socks5://wrong:wrong@8.8.4.4:1080"},
+            "admin",
+        )
+    with connect(settings.database_path) as db:
+        after = dict(db.execute("SELECT * FROM isp_exits WHERE id=?", (identifier,)).fetchone())
+    assert after["host"] == before["host"]
+    assert after["secret_ref"] == before["secret_ref"]
+    assert SecretStore(settings.secret_directory).path(before["secret_ref"]).exists()
+
+
+def test_isp_page_offers_safe_connection_edit_and_link_import(client, settings, isp_data):  # noqa: F811
+    isps.register(settings, isp_data, "admin")
+    login(client)
+    page = client.get("/isps")
+    assert "编辑连接信息" in page.text
+    assert "粘贴完整 SOCKS5 链接" in page.text
+    assert 'src="/static/isps.js"' in page.text
+    assert isp_data["username"] not in page.text
+    assert isp_data["password"] not in page.text
 
 
 def test_minute_scheduler_does_not_duplicate_pending_or_active_jobs(

@@ -1,9 +1,11 @@
 import ipaddress
 import json
 import re
+import secrets
 import sqlite3
 import time
 from datetime import UTC, date, datetime
+from urllib.parse import unquote, urlsplit
 
 from controller.services.database import audit, connect
 from controller.services.secrets import SecretStore
@@ -30,11 +32,41 @@ def public_ip(value):
     return str(result)
 
 
-def register(settings, data, actor):
-    name = data.get("name", "").strip()
-    host = data.get("host", "").strip()
-    if not 1 <= len(name) <= 64:
-        raise ValueError("名称需为 1–64 个字符。")
+def parse_socks5_uri(value):
+    value = value.strip()
+    if not 1 <= len(value) <= 2048 or any(character.isspace() for character in value):
+        raise ValueError("SOCKS5 链接格式不正确。")
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+        username = unquote(parsed.username or "", errors="strict")
+        password = unquote(parsed.password or "", errors="strict")
+    except (UnicodeDecodeError, ValueError):
+        raise ValueError("SOCKS5 链接格式不正确。") from None
+    if (
+        parsed.scheme.lower() != "socks5"
+        or not parsed.hostname
+        or port is None
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+        or not username
+        or not password
+    ):
+        raise ValueError("请粘贴 socks5://用户名:密码@地址:端口 格式的完整链接。")
+    return {
+        "host": parsed.hostname,
+        "port": str(port),
+        "username": username,
+        "password": password,
+    }
+
+
+def connection_data(data, current=None, credentials=None):
+    supplied = parse_socks5_uri(data["proxy_uri"]) if data.get("proxy_uri", "").strip() else {}
+    current = current or {}
+    credentials = credentials or {}
+    host = supplied.get("host") or data.get("host", "").strip() or current.get("host", "")
     try:
         host = public_ip(host)
     except ValueError:
@@ -43,29 +75,54 @@ def register(settings, data, actor):
         ):
             raise ValueError("请填写公网 IPv4 或域名。") from None
     try:
-        port = int(data.get("port", ""))
-        gateway_id = int(data.get("gateway_id", ""))
+        port = int(supplied.get("port") or data.get("port", "") or current.get("port", ""))
         if not 1 <= port <= 65535:
             raise ValueError
-    except ValueError:
-        raise ValueError("请选择网关，并填写有效端口。") from None
-    credentials = {k: data.get(k, "") for k in ("username", "password")}
-    if any(not 1 <= len(v.encode()) <= 255 for v in credentials.values()):
-        raise ValueError("SOCKS5 用户名和密码各需 1–255 字节。")
-    optional = {k: data.get(k, "").strip() for k in ("country", "city", "provider")}
-    if any(len(v) > 80 for v in optional.values()):
+    except (TypeError, ValueError):
+        raise ValueError("请填写有效端口。") from None
+    values = {}
+    for key in ("username", "password"):
+        values[key] = supplied.get(key) or data.get(key, "") or credentials.get(key, "")
+        if not isinstance(values[key], str) or not 1 <= len(values[key].encode()) <= 255:
+            raise ValueError("SOCKS5 用户名和密码各需 1–255 字节。")
+    return {"host": host, "port": port, **values}
+
+
+def optional_data(data, current=None):
+    current = current or {}
+    optional = {
+        key: (data.get(key, "").strip() if key in data else current.get(key, ""))
+        for key in ("country", "city", "provider")
+    }
+    if any(len(value) > 80 for value in optional.values()):
         raise ValueError("国家、城市和服务商各最多 80 个字符。")
-    expiry = data.get("expires_on", "").strip() or None
+    raw_expiry = data.get("expires_on", "").strip() if "expires_on" in data else current.get(
+        "expires_on"
+    )
+    expiry = raw_expiry or None
     if expiry:
         try:
             expiry = date.fromisoformat(expiry).isoformat()
         except ValueError:
             raise ValueError("到期日格式应为 YYYY-MM-DD。") from None
+    return {**optional, "expires_on": expiry}
+
+
+def register(settings, data, actor):
+    name = data.get("name", "").strip()
+    if not 1 <= len(name) <= 64:
+        raise ValueError("名称需为 1–64 个字符。")
+    connection = connection_data(data)
+    try:
+        gateway_id = int(data.get("gateway_id", ""))
+    except ValueError:
+        raise ValueError("请选择网关。") from None
+    optional = optional_data(data)
     expected = data.get("expected_exit_ip", "").strip() or None
     if expected:
         expected = public_ip(expected)
     store = SecretStore(settings.secret_directory)
-    reference = store.put(credentials)
+    reference = store.put({key: connection[key] for key in ("username", "password")})
     try:
         with connect(settings.database_path) as db:
             gateway = db.execute("SELECT id FROM gateways WHERE id=?", (gateway_id,)).fetchone()
@@ -77,14 +134,14 @@ def register(settings, data, actor):
                 VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     name,
-                    host,
-                    port,
+                    connection["host"],
+                    connection["port"],
                     reference,
                     gateway_id,
                     optional["country"],
                     optional["city"],
                     optional["provider"],
-                    expiry,
+                    optional["expires_on"],
                     expected,
                     int(time.time()),
                 ),
@@ -120,6 +177,114 @@ def rename(settings, isp_id, name, actor):
             )
     except sqlite3.IntegrityError:
         raise ValueError("该 ISP 名称已存在。") from None
+
+
+def update_connection(settings, isp_id, data, actor):
+    store = SecretStore(settings.secret_directory)
+    with connect(settings.database_path) as db:
+        current_row = db.execute("SELECT * FROM isp_exits WHERE id=?", (isp_id,)).fetchone()
+        if not current_row:
+            raise ValueError("未找到 ISP。")
+        current = dict(current_row)
+        if db.execute(
+            "SELECT 1 FROM isp_jobs WHERE isp_id=? AND state IN ('QUEUED','RUNNING')", (isp_id,)
+        ).fetchone():
+            raise ValueError("该 ISP 正在检测，请稍后再编辑。")
+        if db.execute(
+            "SELECT 1 FROM exit_jobs WHERE gateway_id=? AND state IN ('QUEUED','RUNNING')",
+            (current["gateway_id"],),
+        ).fetchone():
+            raise ValueError("网关正在应用配置，请稍后再编辑。")
+        gateway = dict(
+            db.execute("SELECT * FROM gateways WHERE id=?", (current["gateway_id"],)).fetchone()
+        )
+        old_credentials = store.get(current["secret_ref"])
+    connection = connection_data(data, current, old_credentials)
+    optional = optional_data(data, current)
+    report = probe_connection(settings, connection, gateway)
+    if current["expected_exit_ip"] and report["exit_ip"] != current["expected_exit_ip"]:
+        raise ValueError("新连接的出口 IP 与已锁定 IP 不一致，原连接信息已保留。")
+    new_reference = store.put(
+        {key: connection[key] for key in ("username", "password")}
+    )
+    old_reference = current["secret_ref"]
+    try:
+        with connect(settings.database_path) as db:
+            db.execute("BEGIN IMMEDIATE")
+            latest = db.execute(
+                "SELECT secret_ref,expected_exit_ip FROM isp_exits WHERE id=?", (isp_id,)
+            ).fetchone()
+            if not latest or latest["secret_ref"] != old_reference:
+                raise ValueError("连接信息已被其他操作修改，请刷新后重试。")
+            expected = latest["expected_exit_ip"] or report["exit_ip"]
+            db.execute(
+                """UPDATE isp_exits SET host=?,port=?,secret_ref=?,country=?,city=?,provider=?,
+                expires_on=?,expected_exit_ip=?,current_exit_ip=?,latency_ms=?,status='HEALTHY',
+                last_error='',tested_at=? WHERE id=?""",
+                (
+                    connection["host"],
+                    connection["port"],
+                    new_reference,
+                    optional["country"],
+                    optional["city"],
+                    optional["provider"],
+                    optional["expires_on"],
+                    expected,
+                    report["exit_ip"],
+                    report["latency_ms"],
+                    int(time.time()),
+                    isp_id,
+                ),
+            )
+            db.execute(
+                """INSERT INTO isp_checks(isp_id,gateway_id,occurred_at,status,expected_ip,
+                observed_ip,latency_ms,error) VALUES (?,?,?,?,?,?,?,?)""",
+                (
+                    isp_id,
+                    current["gateway_id"],
+                    int(time.time()),
+                    "HEALTHY",
+                    expected,
+                    report["exit_ip"],
+                    report["latency_ms"],
+                    "",
+                ),
+            )
+            audit(
+                db,
+                actor,
+                "isp.connection.updated",
+                json.dumps(
+                    {
+                        "isp_id": isp_id,
+                        "before": f"{current['host']}:{current['port']}",
+                        "after": f"{connection['host']}:{connection['port']}",
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+            affected = db.execute(
+                "SELECT id FROM exit_groups WHERE isp_id=? AND applied=1 ORDER BY id LIMIT 1",
+                (isp_id,),
+            ).fetchone()
+            if affected:
+                db.execute(
+                    """INSERT INTO exit_jobs(group_id,gateway_id,actor,transaction_id,created_at)
+                    VALUES (?,?,?,?,?)""",
+                    (
+                        affected["id"],
+                        current["gateway_id"],
+                        actor,
+                        secrets.token_hex(16),
+                        int(time.time()),
+                    ),
+                )
+                audit(db, actor, "exit.apply.queued", f"group_id={affected['id']}")
+    except Exception:
+        store.delete(new_reference)
+        raise
+    store.delete(old_reference)
+    return affected["id"] if affected else None
 
 
 def enqueue(settings, isp_id, actor):
@@ -173,14 +338,13 @@ def snapshot(settings):
     return values, checks
 
 
-def probe(settings, isp, gateway):
+def probe_connection(settings, connection, gateway):
     store = SecretStore(settings.secret_directory)
-    credentials = store.get(isp["secret_ref"])
     with connect_gateway(gateway, "proxyadmin", store.get(gateway["managed_ref"])) as client:
         output = execute(
             client,
             "/usr/local/sbin/pfem-isp-probe",
-            stdin=json.dumps({"host": isp["host"], "port": isp["port"], **credentials}).encode(),
+            stdin=json.dumps(connection).encode(),
             timeout=65,
         )
     report = json.loads(output)
@@ -191,6 +355,15 @@ def probe(settings, isp, gateway):
     if not 0 <= latency <= 65000:
         raise GatewayError("检测耗时数据异常。")
     return {"exit_ip": ip, "latency_ms": latency}
+
+
+def probe(settings, isp, gateway):
+    credentials = SecretStore(settings.secret_directory).get(isp["secret_ref"])
+    return probe_connection(
+        settings,
+        {"host": isp["host"], "port": isp["port"], **credentials},
+        gateway,
+    )
 
 
 def recover(db):

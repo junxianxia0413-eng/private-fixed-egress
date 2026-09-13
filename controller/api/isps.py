@@ -6,6 +6,7 @@ from controller.api.dashboard import session_for, templates
 from controller.api.gateways import authenticated_form
 from controller.services import isps
 from controller.services.database import connect
+from gateways.ssh import GatewayError
 
 router = APIRouter()
 
@@ -77,5 +78,21 @@ async def edit_isp(request: Request, isp_id: int):
     try:
         isps.rename(request.app.state.settings, isp_id, form.get("name", ""), session["username"])
     except ValueError as exc:
+        return page(request, session, str(exc), 400)
+    return RedirectResponse("/isps", status_code=303)
+
+
+@router.post("/isps/{isp_id}/connection")
+async def edit_isp_connection(request: Request, isp_id: int):
+    session, form = await authenticated_form(request)
+    try:
+        await run_in_threadpool(
+            isps.update_connection,
+            request.app.state.settings,
+            isp_id,
+            form,
+            session["username"],
+        )
+    except (ValueError, GatewayError) as exc:
         return page(request, session, str(exc), 400)
     return RedirectResponse("/isps", status_code=303)
