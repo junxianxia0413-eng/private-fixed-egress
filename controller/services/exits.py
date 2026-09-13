@@ -152,8 +152,10 @@ def desired(settings, job):
             raise GatewayError("目标 ISP 检测不正常，请先检测 ISP。")
         # An existing route keeps running through a temporary probe failure or stale
         # dashboard sample. Only a confirmed identity change or expiry disables it.
-        enabled = target_ready if row["id"] == job["group_id"] else bool(
-            row["applied"] and not identity_changed and not expired
+        enabled = (
+            target_ready
+            if row["id"] == job["group_id"]
+            else bool(row["applied"] and not identity_changed and not expired)
         )
         credentials = store.get(row["isp_secret"])
         probe = store.get(row["secret_ref"])

@@ -96,8 +96,8 @@ def optional_data(data, current=None):
     }
     if any(len(value) > 80 for value in optional.values()):
         raise ValueError("国家、城市和服务商各最多 80 个字符。")
-    raw_expiry = data.get("expires_on", "").strip() if "expires_on" in data else current.get(
-        "expires_on"
+    raw_expiry = (
+        data.get("expires_on", "").strip() if "expires_on" in data else current.get("expires_on")
     )
     expiry = raw_expiry or None
     if expiry:
@@ -204,9 +204,7 @@ def update_connection(settings, isp_id, data, actor):
     report = probe_connection(settings, connection, gateway)
     if current["expected_exit_ip"] and report["exit_ip"] != current["expected_exit_ip"]:
         raise ValueError("新连接的出口 IP 与已锁定 IP 不一致，原连接信息已保留。")
-    new_reference = store.put(
-        {key: connection[key] for key in ("username", "password")}
-    )
+    new_reference = store.put({key: connection[key] for key in ("username", "password")})
     old_reference = current["secret_ref"]
     try:
         with connect(settings.database_path) as db:
