@@ -3,7 +3,7 @@ import re
 import secrets
 import sqlite3
 import time
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from controller.services.database import audit, connect
 from controller.services.secrets import SecretStore
@@ -133,17 +133,28 @@ def desired(settings, job):
             (job["gateway_id"],),
         ).fetchall()
     groups = []
+    today = datetime.now(UTC).date()
     for row in rows:
         if not row["expected_exit_ip"]:
             raise GatewayError("ISP 尚未取得固定出口身份。")
-        enabled = (
+        expired = bool(row["expires_on"] and date.fromisoformat(row["expires_on"]) < today)
+        identity_changed = bool(
+            row["isp_current"] and row["isp_current"] != row["expected_exit_ip"]
+        )
+        target_ready = bool(
             row["isp_status"] == "HEALTHY"
             and row["isp_current"] == row["expected_exit_ip"]
             and row["tested_at"]
-            and time.time() - row["tested_at"] <= 120
+            and time.time() - row["tested_at"] <= 300
+            and not expired
         )
-        if row["id"] == job["group_id"] and not enabled:
+        if row["id"] == job["group_id"] and not target_ready:
             raise GatewayError("目标 ISP 检测不正常，请先检测 ISP。")
+        # An existing route keeps running through a temporary probe failure or stale
+        # dashboard sample. Only a confirmed identity change or expiry disables it.
+        enabled = target_ready if row["id"] == job["group_id"] else bool(
+            row["applied"] and not identity_changed and not expired
+        )
         credentials = store.get(row["isp_secret"])
         probe = store.get(row["secret_ref"])
         # Pin a public upstream IP before rendering both core and firewall rules.
@@ -221,8 +232,8 @@ def recover(db):
             ("控制台重启中断配置，请等待远程回滚并重新验证。", int(time.time()), row["id"]),
         )
         db.execute(
-            "UPDATE exit_groups SET status='UNKNOWN',last_error=? WHERE gateway_id=?",
-            ("配置任务中断，需重新验证。", row["gateway_id"]),
+            "UPDATE exit_groups SET status='UNKNOWN',last_error=? WHERE id=?",
+            ("配置任务中断，旧配置由服务器自动恢复，请重新验证当前线路。", row["group_id"]),
         )
         audit(db, "system", "exit.apply.interrupted", f"group_id={row['group_id']}")
 
@@ -291,19 +302,26 @@ def run_next(settings):
     except Exception as exc:
         error = str(exc) if isinstance(exc, GatewayError) else "出口组配置异常，请检测后重试。"
         with connect(settings.database_path) as db:
-            db.execute(
-                """UPDATE subscription_groups SET state='PENDING' WHERE exit_id IN
-                (SELECT id FROM exit_groups WHERE gateway_id=?)""",
-                (job["gateway_id"],),
+            previous = db.execute(
+                "SELECT applied,current_exit_ip FROM exit_groups WHERE id=?", (job["group_id"],)
+            ).fetchone()
+            old_route_working = bool(
+                previous and previous["applied"] and previous["current_exit_ip"]
             )
-            db.execute(
-                "UPDATE exit_groups SET status='UNKNOWN',last_error=? WHERE gateway_id=?",
-                ("网关配置未确认，请重新验证。", job["gateway_id"]),
-            )
-            db.execute(
-                "UPDATE exit_groups SET status='CONFIG_FAILED',last_error=? WHERE id=?",
-                (error, job["group_id"]),
-            )
+            if old_route_working:
+                db.execute(
+                    "UPDATE exit_groups SET status='HEALTHY',last_error=? WHERE id=?",
+                    (f"新配置失败，旧配置继续运行：{error}", job["group_id"]),
+                )
+            else:
+                db.execute(
+                    "UPDATE subscription_groups SET state='PENDING' WHERE exit_id=?",
+                    (job["group_id"],),
+                )
+                db.execute(
+                    "UPDATE exit_groups SET status='CONFIG_FAILED',last_error=? WHERE id=?",
+                    (error, job["group_id"]),
+                )
             db.execute(
                 "UPDATE exit_jobs SET state='FAILED',error=?,finished_at=? WHERE id=?",
                 (error, int(time.time()), job["id"]),

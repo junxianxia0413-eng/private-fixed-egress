@@ -70,8 +70,60 @@ def test_exit_apply_success_and_ambiguous_failure(settings, group_data, monkeypa
     exits.enqueue(settings, identifier, "admin")
     exits.run_next(settings)
     rows, jobs = exits.snapshot(settings)
-    assert rows[0]["status"] == "CONFIG_FAILED" and jobs[0]["state"] == "FAILED"
+    assert rows[0]["status"] == "HEALTHY" and jobs[0]["state"] == "FAILED"
+    assert "旧配置继续运行" in rows[0]["last_error"]
     assert "SECRET-UPSTREAM-PASSWORD" not in json.dumps([rows, jobs])
+
+
+def test_failed_new_exit_does_not_break_existing_exit_or_subscription(
+    settings, group_data, isp_data
+):
+    first = exits.register(settings, group_data, "admin")
+    second_isp = isps.register(
+        settings,
+        {**isp_data, "name": "ISP-02", "host": "8.8.4.4", "expected_exit_ip": "8.8.4.4"},
+        "admin",
+    )
+    with connect(settings.database_path) as db:
+        db.execute(
+            """UPDATE exit_groups SET applied=1,status='HEALTHY',current_exit_ip='1.1.1.1'
+            WHERE id=?""",
+            (first,),
+        )
+        db.execute(
+            """INSERT INTO subscription_groups(name,exit_id,state,created_at,deployed_exit_id)
+            VALUES ('GROUP-01',?,'READY',?,?)""",
+            (first, int(time.time()), first),
+        )
+        db.execute(
+            """UPDATE isp_exits SET status='HEALTHY',current_exit_ip='8.8.4.4',tested_at=?
+            WHERE id=?""",
+            (int(time.time()), second_isp),
+        )
+    second = exits.register(
+        settings,
+        {"name": "EXIT-02", "gateway_id": group_data["gateway_id"], "isp_id": second_isp},
+        "admin",
+    )
+    with connect(settings.database_path) as db:
+        db.execute(
+            "UPDATE isp_exits SET status='CRITICAL',current_exit_ip=NULL WHERE id=?", (second_isp,)
+        )
+    exits.enqueue(settings, second, "admin")
+    exits.run_next(settings)
+    with connect(settings.database_path) as db:
+        first_after = db.execute(
+            "SELECT status,current_exit_ip FROM exit_groups WHERE id=?", (first,)
+        ).fetchone()
+        subscription_state = db.execute(
+            "SELECT state FROM subscription_groups WHERE exit_id=?", (first,)
+        ).fetchone()[0]
+        second_after = db.execute(
+            "SELECT status FROM exit_groups WHERE id=?", (second,)
+        ).fetchone()[0]
+    assert (first_after["status"], first_after["current_exit_ip"]) == ("HEALTHY", "1.1.1.1")
+    assert subscription_state == "READY"
+    assert second_after == "CONFIG_FAILED"
 
 
 def test_remote_mismatched_exit_never_commits(settings, group_data, monkeypatch):
