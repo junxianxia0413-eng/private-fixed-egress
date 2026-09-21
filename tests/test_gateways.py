@@ -265,4 +265,3 @@ def test_unhealthy_core_and_unfinished_ssh_protection_not_healthy(monkeypatch):
     monkeypatch.setattr(deployment, "connect_gateway", lambda *a: MagicMock())
     with pytest.raises(GatewayError, match="登录保护"):
         deployment.inspect({"managed_ref": "ref"}, MagicMock(), "check")
-

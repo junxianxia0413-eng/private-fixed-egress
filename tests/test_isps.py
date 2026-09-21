@@ -409,4 +409,3 @@ def test_remote_error_is_translated_without_diagnostic_leaks(settings, isp_data,
     with pytest.raises(GatewayError) as exc:
         isps.probe(settings, isp, gateway)
     assert isp_data["password"] not in str(exc.value)
-

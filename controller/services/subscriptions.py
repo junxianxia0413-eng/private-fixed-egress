@@ -234,4 +234,3 @@ def payload(settings, token, format_name="shadowrocket"):
     if format_name == "clash":
         return clash_payload(row, password)
     raise ValueError("不支持的订阅格式。")
-

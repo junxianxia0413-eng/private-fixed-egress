@@ -99,4 +99,3 @@ systemctl restart pfem-gateway-firewall.service
 systemctl start pfem-gateway.service
 systemctl enable --now pfem-gateway-guard.timer
 echo PFEM_BOOTSTRAP_OK
-

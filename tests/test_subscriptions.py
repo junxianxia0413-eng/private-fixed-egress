@@ -190,4 +190,3 @@ def test_phone_entry_requires_lease_and_cannot_directly_dial_other_hosts(topolog
     topology.append({**topology[0], "id": 2})
     with pytest.raises(ValueError):
         validate(topology)
-
