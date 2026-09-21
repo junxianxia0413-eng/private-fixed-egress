@@ -148,6 +148,53 @@ def test_migrations_repeat_without_losing_data(settings):
         assert db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
 
 
+def test_direct_exit_migration_preserves_existing_routes_and_subscriptions(tmp_path):
+    path = tmp_path / "legacy.db"
+    db = sqlite3.connect(path)
+    try:
+        for number, migration in enumerate(MIGRATIONS[:-1], 1):
+            for statement in migration:
+                db.execute(statement)
+            db.execute(f"PRAGMA user_version={number}")
+        now = int(time.time())
+        db.execute(
+            """INSERT INTO gateways
+            (id,name,host,ssh_port,location,bootstrap_user,host_key,managed_ref,created_at)
+            VALUES (1,'gw','45.32.20.164',22,'Tokyo','root','key','managed',?)""",
+            (now,),
+        )
+        db.execute(
+            """INSERT INTO isp_exits
+            (id,name,host,port,secret_ref,gateway_id,expected_exit_ip,created_at)
+            VALUES (1,'isp','43.246.197.96',443,'isp-secret',1,'43.246.197.96',?)""",
+            (now,),
+        )
+        db.execute(
+            """INSERT INTO exit_groups
+            (id,name,gateway_id,isp_id,secret_ref,applied,created_at)
+            VALUES (1,'exit',1,1,'probe-secret',1,?)""",
+            (now,),
+        )
+        db.execute("INSERT INTO devices VALUES (1,'phone','Phone','iOS','','',?)", (now,))
+        db.execute(
+            """INSERT INTO subscription_groups
+            (id,name,exit_id,state,created_at,client_ref,token_ref,token_hash,deployed_exit_id)
+            VALUES (1,'phones',1,'READY',?,'client','token','hash',1)""",
+            (now,),
+        )
+        db.execute("INSERT INTO group_devices VALUES (1,1,1)")
+        db.commit()
+    finally:
+        db.close()
+    migrate(path)
+    with connect(path) as db:
+        exit_row = db.execute("SELECT * FROM exit_groups").fetchone()
+        group_row = db.execute("SELECT * FROM subscription_groups").fetchone()
+        assert exit_row["exit_type"] == "ISP_PROXY" and exit_row["isp_id"] == 1
+        assert group_row["exit_id"] == 1 and group_row["deployed_exit_id"] == 1
+        assert db.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
 def test_newer_schema_rejected(settings):
     with connect(settings.database_path) as db:
         db.execute("PRAGMA user_version=99")

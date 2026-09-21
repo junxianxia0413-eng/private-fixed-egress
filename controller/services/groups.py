@@ -13,21 +13,33 @@ MAX_DEVICES = 20
 
 def available_exit(db, identifier):
     row = db.execute(
-        """SELECT e.*,i.name AS isp_name,i.expected_exit_ip,i.status AS isp_status,
-        i.current_exit_ip AS verified_ip,i.expires_on,
-        i.tested_at FROM exit_groups e JOIN isp_exits i ON e.isp_id=i.id WHERE e.id=?""",
+        """SELECT e.*,COALESCE(i.name,'VPS 自带公网 IP') AS isp_name,
+        COALESCE(i.expected_exit_ip,e.direct_expected_ip) AS expected_exit_ip,
+        i.status AS isp_status,i.current_exit_ip AS verified_ip,i.expires_on,
+        i.tested_at FROM exit_groups e LEFT JOIN isp_exits i ON e.isp_id=i.id WHERE e.id=?""",
         (identifier,),
     ).fetchone()
-    if (
-        not row
-        or not row["applied"]
-        or row["isp_status"] not in ("HEALTHY", "CHECKING")
-        or row["verified_ip"] != row["expected_exit_ip"]
-        or (row["expires_on"] and date.fromisoformat(row["expires_on"]) < datetime.now(UTC).date())
-        or not row["tested_at"]
-        or time.time() - row["tested_at"] > 120
-    ):
-        raise ValueError("请选择已经应用且 ISP 最近检测正常的出口线路。")
+    direct_ready = bool(
+        row
+        and row["exit_type"] == "GATEWAY_DIRECT"
+        and row["applied"]
+        and row["status"] == "HEALTHY"
+        and row["current_exit_ip"] == row["direct_expected_ip"]
+    )
+    isp_ready = bool(
+        row
+        and row["exit_type"] == "ISP_PROXY"
+        and row["applied"]
+        and row["isp_status"] in ("HEALTHY", "CHECKING")
+        and row["verified_ip"] == row["expected_exit_ip"]
+        and not (
+            row["expires_on"] and date.fromisoformat(row["expires_on"]) < datetime.now(UTC).date()
+        )
+        and row["tested_at"]
+        and time.time() - row["tested_at"] <= 120
+    )
+    if not (direct_ready or isp_ready):
+        raise ValueError("请选择已经应用且最近检测正常的出口线路。")
     return row
 
 
@@ -307,9 +319,11 @@ def snapshot(settings):
         rows = [
             dict(r)
             for r in db.execute("""SELECT s.id,s.name,s.exit_id,s.state,s.created_at,
-            e.name AS exit_name,e.gateway_id,
-            i.name AS isp_name,i.expected_exit_ip FROM subscription_groups s
-            JOIN exit_groups e ON s.exit_id=e.id JOIN isp_exits i ON e.isp_id=i.id ORDER BY s.id""")
+            e.name AS exit_name,e.gateway_id,e.exit_type,
+            COALESCE(i.name,'VPS 自带公网 IP') AS isp_name,
+            COALESCE(i.expected_exit_ip,e.direct_expected_ip) AS expected_exit_ip
+            FROM subscription_groups s JOIN exit_groups e ON s.exit_id=e.id
+            LEFT JOIN isp_exits i ON e.isp_id=i.id ORDER BY s.id""")
         ]
         for row in rows:
             row["devices"] = [
@@ -335,15 +349,16 @@ def prepare_change(settings, identifier, new_exit_id, actor):
         if not group:
             raise ValueError("未找到订阅组。")
         old = db.execute(
-            """SELECT e.*,i.name AS isp_name,i.expected_exit_ip FROM exit_groups e
-            JOIN isp_exits i ON e.isp_id=i.id WHERE e.id=?""",
+            """SELECT e.*,COALESCE(i.name,'VPS 自带公网 IP') AS isp_name,
+            COALESCE(i.expected_exit_ip,e.direct_expected_ip) AS expected_exit_ip
+            FROM exit_groups e LEFT JOIN isp_exits i ON e.isp_id=i.id WHERE e.id=?""",
             (group["exit_id"],),
         ).fetchone()
         new = available_exit(db, new_exit_id)
         if old["id"] == new["id"]:
             raise ValueError("新旧出口相同。")
         if old["gateway_id"] != new["gateway_id"]:
-            raise ValueError("当前版本支持同一网关内切换 ISP；跨网关迁移尚未开放。")
+            raise ValueError("当前版本支持同一网关内切换出口；跨网关迁移尚未开放。")
         db.execute(
             "DELETE FROM group_confirmations WHERE expires_at<? OR group_id=?",
             (int(time.time()), identifier),
@@ -394,8 +409,9 @@ def confirm_change(settings, identifier, token, actor):
         ).fetchone():
             raise ValueError("网关配置处理中，请稍后重新确认。")
         old = db.execute(
-            """SELECT e.isp_id,i.name,i.expected_exit_ip FROM exit_groups e
-            JOIN isp_exits i ON e.isp_id=i.id WHERE e.id=?""",
+            """SELECT e.isp_id,COALESCE(i.name,'VPS 自带公网 IP') AS name,
+            COALESCE(i.expected_exit_ip,e.direct_expected_ip) AS expected_exit_ip
+            FROM exit_groups e LEFT JOIN isp_exits i ON e.isp_id=i.id WHERE e.id=?""",
             (row["old_exit_id"],),
         ).fetchone()
         db.execute(

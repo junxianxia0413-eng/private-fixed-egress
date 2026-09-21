@@ -344,6 +344,22 @@ def test_two_different_exit_ips_are_not_reported_stable(monkeypatch):
     assert not result["ok"] and result["error"] == "UNSTABLE_EXIT"
 
 
+def test_direct_probe_requires_two_matching_independent_sources(monkeypatch):
+    values = iter([("45.32.20.164", 30), ("45.32.20.164", 50)])
+    monkeypatch.setattr(remote_probe, "request_direct_ip", lambda *a: next(values))
+    result = remote_probe.probe({"mode": "direct"})
+    assert result["ok"] and result["exit_ip"] == "45.32.20.164"
+    assert result["latency_ms"] == 40
+    assert result["sources"] == list(remote_probe.TARGETS)
+
+
+def test_direct_probe_rejects_identity_disagreement(monkeypatch):
+    values = iter([("45.32.20.164", 30), ("8.8.8.8", 50)])
+    monkeypatch.setattr(remote_probe, "request_direct_ip", lambda *a: next(values))
+    result = remote_probe.probe({"mode": "direct"})
+    assert not result["ok"] and result["error"] == "UNSTABLE_EXIT"
+
+
 def test_independent_identity_sources_run_concurrently(monkeypatch):
     import threading
 

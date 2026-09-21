@@ -7,6 +7,7 @@ import uuid
 from datetime import date
 
 TLS_PORT_BASE = 13000
+DIRECT_MARK_BASE = 32000
 
 
 def client_uuid(password):
@@ -37,31 +38,33 @@ def validate(groups):
     seen = set()
     clients_seen = set()
     for group in groups:
-        if set(group) - {"clients", "expires_on"} != {
+        exit_type = group.get("exit_type", "ISP_PROXY")
+        common = {
             "id",
             "enabled",
-            "server",
-            "port",
-            "username",
-            "password",
             "expected_ip",
             "probe_username",
             "probe_password",
-        }:
+        }
+        optional = {"clients", "expires_on", "exit_type"}
+        isp_fields = {"server", "port", "username", "password"}
+        required = common | (isp_fields if exit_type == "ISP_PROXY" else set())
+        if exit_type not in {"ISP_PROXY", "GATEWAY_DIRECT"} or set(group) - optional != required:
             raise ValueError("Invalid group fields")
         identifier = group["id"]
         if type(identifier) is not int or not 1 <= identifier <= 1000 or identifier in seen:
             raise ValueError("Invalid or duplicate group id")
         seen.add(identifier)
-        if (
-            type(group["enabled"]) is not bool
-            or type(group["port"]) is not int
-            or not 1 <= group["port"] <= 65535
-        ):
-            raise ValueError("Invalid group state or port")
-        address(group["server"])
+        if type(group["enabled"]) is not bool:
+            raise ValueError("Invalid group state")
         address(group["expected_ip"])
-        for key in ("username", "password", "probe_username", "probe_password"):
+        credential_keys = ["probe_username", "probe_password"]
+        if exit_type == "ISP_PROXY":
+            if type(group["port"]) is not int or not 1 <= group["port"] <= 65535:
+                raise ValueError("Invalid group port")
+            address(group["server"])
+            credential_keys.extend(("username", "password"))
+        for key in credential_keys:
             if not isinstance(group[key], str) or not 1 <= len(group[key].encode()) <= 255:
                 raise ValueError("Invalid credentials")
         if not re.fullmatch("[a-zA-Z0-9_-]{32,128}", group["probe_password"]):
@@ -83,6 +86,8 @@ def validate(groups):
                 raise ValueError("Generated subscription credential required")
             clients_seen.add(client["id"])
         expires_on = group.get("expires_on")
+        if exit_type == "GATEWAY_DIRECT" and expires_on is not None:
+            raise ValueError("Direct exits cannot expire")
         if expires_on is not None:
             try:
                 date.fromisoformat(expires_on)
@@ -106,6 +111,7 @@ def render(groups, proxy_uid):
         "route": {"rules": [{"inbound": ["health"], "action": "reject"}]},
     }
     allowed = set()
+    direct_marks = set()
     public_ports = []
     ports = [10810]
     for group in groups:
@@ -157,9 +163,17 @@ def render(groups, proxy_uid):
                 }
             )
         if group["enabled"]:
-            outbound = f"isp-{identifier}"
-            config["outbounds"].append(
-                {
+            if group.get("exit_type", "ISP_PROXY") == "GATEWAY_DIRECT":
+                outbound = f"direct-{identifier}"
+                mark = DIRECT_MARK_BASE + identifier
+                config["outbounds"].append(
+                    {"type": "direct", "tag": outbound, "routing_mark": mark}
+                )
+                direct_marks.add(mark)
+            else:
+                outbound = f"isp-{identifier}"
+                config["outbounds"].append(
+                    {
                     "type": "socks",
                     "tag": outbound,
                     "server": group["server"],
@@ -168,12 +182,12 @@ def render(groups, proxy_uid):
                     "username": group["username"],
                     "password": group["password"],
                     "network": "tcp",
-                }
-            )
+                    }
+                )
+                allowed.add((group["server"], group["port"]))
             config["route"]["rules"].append(
                 {"inbound": inbound_tags, "action": "route", "outbound": outbound}
             )
-            allowed.add((group["server"], group["port"]))
         else:
             config["route"]["rules"].append({"inbound": inbound_tags, "action": "reject"})
     config["route"]["rules"].append({"action": "reject"})
@@ -202,6 +216,10 @@ def render(groups, proxy_uid):
         firewall.append(
             f"add rule inet pfem_guard output meta skuid {proxy_uid} "
             f"ip daddr {ip} tcp dport {port} accept"
+        )
+    for mark in sorted(direct_marks):
+        firewall.append(
+            f"add rule inet pfem_guard output meta skuid {proxy_uid} meta mark {mark} accept"
         )
     firewall.extend(
         [

@@ -88,6 +88,32 @@ def request_ip(config, address, target):
     return str(actual), round((time.monotonic() - began) * 1000, 1)
 
 
+def request_direct_ip(target):
+    """Resolve and query one independent IP service without an upstream proxy."""
+    began = time.monotonic()
+    address = endpoint(target)
+    with socket.create_connection((address, 443), timeout=10) as connection:
+        with ssl.create_default_context().wrap_socket(connection, server_hostname=target) as tls:
+            tls.sendall(
+                (
+                    f"GET / HTTP/1.1\r\nHost: {target}\r\nConnection: close\r\n"
+                    "Accept: text/plain\r\nUser-Agent: PFEM/1\r\n\r\n"
+                ).encode()
+            )
+            response = http.client.HTTPResponse(tls)
+            response.begin()
+            content = response.read(129)
+            if response.status != 200 or len(content) > 128:
+                raise ProbeError("IP_SERVICE_ERROR")
+            try:
+                actual = ipaddress.ip_address(content.decode("ascii").strip())
+                if actual.version != 4 or not actual.is_global:
+                    raise ValueError
+            except (ValueError, UnicodeError):
+                raise ProbeError("INVALID_EXIT_IP") from None
+    return str(actual), round((time.monotonic() - began) * 1000, 1)
+
+
 def request_all(config, address):
     # Each source uses an independent SOCKS/TLS connection. Running them together keeps
     # identity agreement while the operator waits only for the slower source.
@@ -97,6 +123,27 @@ def request_all(config, address):
 
 def probe(config):
     try:
+        if config.get("mode") == "direct":
+            if set(config) != {"mode"}:
+                raise ProbeError("INVALID_INPUT")
+            with ThreadPoolExecutor(max_workers=len(TARGETS)) as pool:
+                measurements = list(pool.map(request_direct_ip, TARGETS))
+            (first, latency1), (second, latency2) = measurements
+            if first != second:
+                return {
+                    "ok": False,
+                    "error": "UNSTABLE_EXIT",
+                    "exit_ip": first,
+                    "second_exit_ip": second,
+                    "sources": list(TARGETS),
+                }
+            return {
+                "ok": True,
+                "exit_ip": first,
+                "latency_ms": round((latency1 + latency2) / 2, 1),
+                "source_latency_ms": dict(zip(TARGETS, (latency1, latency2), strict=True)),
+                "sources": list(TARGETS),
+            }
         if (
             not isinstance(config["port"], int)
             or not 1 <= config["port"] <= 65535

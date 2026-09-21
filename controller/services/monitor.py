@@ -142,8 +142,10 @@ def record_health(db, gateway, report, now):
         if isinstance(r, dict) and type(r.get("id")) is int
     }
     rows = db.execute(
-        """SELECT e.id,i.expected_exit_ip,i.status AS isp_status FROM exit_groups e
-        JOIN isp_exits i ON e.isp_id=i.id WHERE e.gateway_id=? AND e.applied=1""",
+        """SELECT e.id,e.exit_type,
+        COALESCE(i.expected_exit_ip,e.direct_expected_ip) AS expected_exit_ip,
+        i.status AS isp_status FROM exit_groups e
+        LEFT JOIN isp_exits i ON e.isp_id=i.id WHERE e.gateway_id=? AND e.applied=1""",
         (gateway["id"],),
     ).fetchall()
     for row in rows:
@@ -153,7 +155,10 @@ def record_health(db, gateway, report, now):
             and fresh
             and guard.get("healthy") is True
             and result.get("exit_ip") == row["expected_exit_ip"]
-            and row["isp_status"] in ("HEALTHY", "CHECKING")
+            and (
+                row["exit_type"] == "GATEWAY_DIRECT"
+                or row["isp_status"] in ("HEALTHY", "CHECKING")
+            )
         )
         latency = result.get("latency_ms")
         db.execute(

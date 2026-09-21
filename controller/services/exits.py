@@ -7,48 +7,100 @@ from datetime import UTC, date, datetime
 
 from controller.services.database import audit, connect
 from controller.services.secrets import SecretStore
-from gateways.configuration import validate
+from gateways.configuration import address, validate
 from gateways.remote_probe import endpoint
 from gateways.ssh import GatewayError, connect_gateway, execute
+
+EXIT_TYPES = {"ISP_PROXY", "GATEWAY_DIRECT"}
+
+
+def detect_direct(settings, gateway):
+    store = SecretStore(settings.secret_directory)
+    with connect_gateway(gateway, "proxyadmin", store.get(gateway["managed_ref"])) as client:
+        report = json.loads(
+            execute(
+                client,
+                "/usr/local/sbin/pfem-isp-probe",
+                stdin=json.dumps({"mode": "direct"}).encode(),
+                timeout=25,
+            )
+        )
+    if report.get("ok") is not True or len(report.get("sources", [])) != 2:
+        raise ValueError("无法通过两个独立检测站确认 VPS 公网出口，请检查网关后重试。")
+    try:
+        exit_ip = address(report["exit_ip"])
+        latency = float(report["latency_ms"])
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("VPS 直出检测返回无效结果，请检查网关后重试。") from None
+    return exit_ip, latency, report["sources"]
 
 
 def register(settings, data, actor):
     name = data.get("name", "").strip()
     if not 1 <= len(name) <= 64:
         raise ValueError("名称需为 1–64 个字符。")
+    exit_type = data.get("exit_type", "ISP_PROXY").strip().upper()
+    if exit_type not in EXIT_TYPES:
+        raise ValueError("请选择有效的出口类型。")
     try:
-        gateway_id, isp_id = int(data.get("gateway_id", "")), int(data.get("isp_id", ""))
-    except ValueError:
+        gateway_id = int(data.get("gateway_id", ""))
+        isp_id = int(data.get("isp_id", "")) if exit_type == "ISP_PROXY" else None
+    except (TypeError, ValueError):
         raise ValueError("请选择网关与 ISP。") from None
+    with connect(settings.database_path) as db:
+        gateway_row = db.execute("SELECT * FROM gateways WHERE id=?", (gateway_id,)).fetchone()
+        gateway = dict(gateway_row) if gateway_row else None
+        isp = (
+            db.execute("SELECT * FROM isp_exits WHERE id=?", (isp_id,)).fetchone()
+            if isp_id is not None
+            else None
+        )
+    if not gateway or gateway["bootstrap_ref"]:
+        raise ValueError("请先完成网关部署。")
+    direct_ip = None
+    direct_latency = None
+    sources = []
+    if exit_type == "GATEWAY_DIRECT":
+        direct_ip, direct_latency, sources = detect_direct(settings, gateway)
+    elif (
+        not isp
+        or isp["status"] != "HEALTHY"
+        or not isp["tested_at"]
+        or time.time() - isp["tested_at"] > 120
+        or not isp["expected_exit_ip"]
+        or isp["expected_exit_ip"] != isp["current_exit_ip"]
+    ):
+        raise ValueError("ISP 必须有最近两分钟内通过的固定出口检测。")
     store = SecretStore(settings.secret_directory)
     reference = store.put({"username": "pfem", "password": secrets.token_urlsafe(32)})
     try:
         with connect(settings.database_path) as db:
             db.execute("BEGIN IMMEDIATE")
-            gateway = db.execute("SELECT * FROM gateways WHERE id=?", (gateway_id,)).fetchone()
-            isp = db.execute("SELECT * FROM isp_exits WHERE id=?", (isp_id,)).fetchone()
-            if not gateway or gateway["bootstrap_ref"]:
-                raise ValueError("请先完成网关部署。")
-            if (
-                not isp
-                or isp["status"] != "HEALTHY"
-                or not isp["tested_at"]
-                or time.time() - isp["tested_at"] > 120
-                or not isp["expected_exit_ip"]
-                or isp["expected_exit_ip"] != isp["current_exit_ip"]
-            ):
-                raise ValueError("ISP 必须有最近两分钟内通过的固定出口检测。")
             count = db.execute(
                 "SELECT COUNT(*) FROM exit_groups WHERE gateway_id=?", (gateway_id,)
             ).fetchone()[0]
             if count >= 20:
                 raise ValueError("当前每台网关最多 20 个出口组。")
             row = db.execute(
-                """INSERT INTO exit_groups(name,gateway_id,isp_id,secret_ref,created_at)
-                VALUES (?,?,?,?,?)""",
-                (name, gateway_id, isp_id, reference, int(time.time())),
+                """INSERT INTO exit_groups
+                (name,gateway_id,exit_type,isp_id,secret_ref,direct_expected_ip,
+                 verification_sources,current_exit_ip,latency_ms,checked_at,created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    name,
+                    gateway_id,
+                    exit_type,
+                    isp_id,
+                    reference,
+                    direct_ip,
+                    json.dumps(sources),
+                    direct_ip,
+                    direct_latency,
+                    int(time.time()) if direct_ip else None,
+                    int(time.time()),
+                ),
             )
-            audit(db, actor, "exit.created", f"group_id={row.lastrowid}")
+            audit(db, actor, "exit.created", f"group_id={row.lastrowid};type={exit_type}")
             return row.lastrowid
     except Exception as exc:
         store.delete(reference)
@@ -77,10 +129,12 @@ def enqueue(settings, group_id, actor):
 
 def snapshot(settings):
     with connect(settings.database_path) as db:
-        rows = db.execute("""SELECT e.id,e.name,e.status,e.last_error,e.current_exit_ip,
-            e.checked_at,e.latency_ms,e.applied,g.name AS gateway_name,i.name AS isp_name,
-            i.expected_exit_ip,i.status AS isp_status FROM exit_groups e
-            JOIN gateways g ON e.gateway_id=g.id JOIN isp_exits i ON e.isp_id=i.id
+        rows = db.execute("""SELECT e.id,e.name,e.exit_type,e.status,e.last_error,
+            e.current_exit_ip,e.checked_at,e.latency_ms,e.applied,
+            g.name AS gateway_name,COALESCE(i.name,'VPS 自带公网 IP') AS isp_name,
+            COALESCE(i.expected_exit_ip,e.direct_expected_ip) AS expected_exit_ip,
+            COALESCE(i.status,'HEALTHY') AS isp_status FROM exit_groups e
+            JOIN gateways g ON e.gateway_id=g.id LEFT JOIN isp_exits i ON e.isp_id=i.id
             ORDER BY e.id""").fetchall()
         active = {
             r[0]
@@ -106,7 +160,11 @@ def snapshot(settings):
             not row["checked_at"] or time.time() - row["checked_at"] > 300
         ):
             value["status"] = "UNKNOWN"
-        if value["applied"] and value["isp_status"] == "CRITICAL":
+        if (
+            value["exit_type"] == "ISP_PROXY"
+            and value["applied"]
+            and value["isp_status"] == "CRITICAL"
+        ):
             value["status"] = "CRITICAL"
         values.append(value)
     return values, jobs
@@ -120,9 +178,9 @@ def desired(settings, job, excluded_clients=()):
         )
         rows = db.execute(
             """SELECT e.*,i.host,i.port,i.secret_ref AS isp_secret,
-            i.expected_exit_ip,i.status AS isp_status,i.current_exit_ip AS isp_current,i.tested_at,
-            i.expires_on
-            FROM exit_groups e JOIN isp_exits i ON e.isp_id=i.id
+            i.expected_exit_ip AS isp_expected_exit_ip,i.status AS isp_status,
+            i.current_exit_ip AS isp_current,i.tested_at,i.expires_on
+            FROM exit_groups e LEFT JOIN isp_exits i ON e.isp_id=i.id
             WHERE e.gateway_id=? AND (e.applied=1 OR e.id=?) ORDER BY e.id""",
             (job["gateway_id"], job["group_id"]),
         ).fetchall()
@@ -135,21 +193,30 @@ def desired(settings, job, excluded_clients=()):
     groups = []
     today = datetime.now(UTC).date()
     for row in rows:
-        if not row["expected_exit_ip"]:
-            raise GatewayError("ISP 尚未取得固定出口身份。")
-        expired = bool(row["expires_on"] and date.fromisoformat(row["expires_on"]) < today)
-        identity_changed = bool(
-            row["isp_current"] and row["isp_current"] != row["expected_exit_ip"]
-        )
-        target_ready = bool(
-            row["isp_status"] == "HEALTHY"
-            and row["isp_current"] == row["expected_exit_ip"]
-            and row["tested_at"]
-            and time.time() - row["tested_at"] <= 300
-            and not expired
-        )
+        is_direct = row["exit_type"] == "GATEWAY_DIRECT"
+        expected_ip = row["direct_expected_ip"] if is_direct else row["isp_expected_exit_ip"]
+        if not expected_ip:
+            raise GatewayError("出口线路尚未取得固定出口身份。")
+        if is_direct:
+            expired = False
+            identity_changed = bool(
+                row["current_exit_ip"] and row["current_exit_ip"] != expected_ip
+            )
+            target_ready = not identity_changed
+        else:
+            expired = bool(row["expires_on"] and date.fromisoformat(row["expires_on"]) < today)
+            identity_changed = bool(
+                row["isp_current"] and row["isp_current"] != expected_ip
+            )
+            target_ready = bool(
+                row["isp_status"] == "HEALTHY"
+                and row["isp_current"] == expected_ip
+                and row["tested_at"]
+                and time.time() - row["tested_at"] <= 300
+                and not expired
+            )
         if row["id"] == job["group_id"] and not target_ready:
-            raise GatewayError("目标 ISP 检测不正常，请先检测 ISP。")
+            raise GatewayError("目标出口身份不正常，请先重新检测。")
         # An existing route keeps running through a temporary probe failure or stale
         # dashboard sample. Only a confirmed identity change or expiry disables it.
         enabled = (
@@ -157,19 +224,13 @@ def desired(settings, job, excluded_clients=()):
             if row["id"] == job["group_id"]
             else bool(row["applied"] and not identity_changed and not expired)
         )
-        credentials = store.get(row["isp_secret"])
         probe = store.get(row["secret_ref"])
-        # Pin a public upstream IP before rendering both core and firewall rules.
-        server = endpoint(row["host"])
-        groups.append(
-            {
+        configured = {
                 "id": row["id"],
+                "exit_type": row["exit_type"],
                 "enabled": bool(enabled),
-                "server": server,
-                "port": row["port"],
-                **credentials,
-                "expected_ip": row["expected_exit_ip"],
-                "expires_on": row["expires_on"],
+                "expected_ip": expected_ip,
+                "expires_on": None if is_direct else row["expires_on"],
                 "probe_username": probe["username"],
                 "probe_password": probe["password"],
                 "clients": [
@@ -178,7 +239,16 @@ def desired(settings, job, excluded_clients=()):
                     if c["exit_id"] == row["id"] and c["id"] not in excluded_clients
                 ],
             }
-        )
+        if not is_direct:
+            credentials = store.get(row["isp_secret"])
+            configured.update(
+                {
+                    "server": endpoint(row["host"]),
+                    "port": row["port"],
+                    **credentials,
+                }
+            )
+        groups.append(configured)
     validate(groups)
     return gateway, groups
 
@@ -204,7 +274,7 @@ def apply_remote(settings, gateway, groups, transaction, stage):
                         "连接超时或请求失败" if match[1] == "CHECK_FAILED" else "出口 IP 不匹配"
                     )
                     raise GatewayError(
-                        f"出口线路 #{match[2]} {detail}；已恢复旧配置，请先检测对应 ISP。"
+                        f"出口线路 #{match[2]} {detail}；已恢复旧配置，请先检测对应出口。"
                     )
                 raise GatewayError("新配置未通过出口验证，已恢复旧配置。")
             raise GatewayError("配置操作失败或回滚待确认；请检查网关，禁止当作正常出口使用。")
@@ -271,7 +341,7 @@ def run_next(settings):
                     latency_ms=?,checked_at=?,config_hash=? WHERE id=?""",
                     (
                         "HEALTHY" if group["enabled"] else "CRITICAL",
-                        "" if group["enabled"] else "ISP 异常，路由已关闭。",
+                        "" if group["enabled"] else "出口异常，路由已关闭。",
                         result.get("exit_ip"),
                         result.get("latency_ms"),
                         int(time.time()),

@@ -1,5 +1,6 @@
 # ruff: noqa: F811
 import json
+import sqlite3
 import time
 from unittest.mock import MagicMock
 
@@ -175,6 +176,59 @@ def test_interrupted_jobs_never_stay_healthy(settings, group_data):
         exits.recover(db)
     rows, jobs = exits.snapshot(settings)
     assert rows[0]["status"] == "UNKNOWN" and jobs[0]["state"] == "FAILED"
+
+
+def test_gateway_direct_is_detected_locked_and_rendered(settings, group_data, monkeypatch):
+    monkeypatch.setattr(
+        exits,
+        "detect_direct",
+        lambda *a: ("45.32.20.164", 42.5, ["api.ipify.org", "icanhazip.com"]),
+    )
+    identifier = exits.register(
+        settings,
+        {
+            "name": "TOKYO-DIRECT",
+            "gateway_id": group_data["gateway_id"],
+            "exit_type": "GATEWAY_DIRECT",
+        },
+        "admin",
+    )
+    with connect(settings.database_path) as db:
+        row = db.execute("SELECT * FROM exit_groups WHERE id=?", (identifier,)).fetchone()
+        assert row["isp_id"] is None
+        assert row["direct_expected_ip"] == "45.32.20.164"
+        assert json.loads(row["verification_sources"]) == ["api.ipify.org", "icanhazip.com"]
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute(
+                "UPDATE exit_groups SET direct_expected_ip='8.8.8.8' WHERE id=?", (identifier,)
+            )
+    _, desired = exits.desired(
+        settings, {"gateway_id": int(group_data["gateway_id"]), "group_id": identifier}
+    )
+    direct = next(group for group in desired if group["id"] == identifier)
+    assert direct["exit_type"] == "GATEWAY_DIRECT"
+    assert "server" not in direct and direct["expected_ip"] == "45.32.20.164"
+
+
+def test_direct_renderer_requires_explicit_mark_and_retains_default_reject():
+    topology = [
+        {
+            "id": 7,
+            "exit_type": "GATEWAY_DIRECT",
+            "enabled": True,
+            "expected_ip": "45.32.20.164",
+            "expires_on": None,
+            "probe_username": "pfem",
+            "probe_password": "A" * 40,
+        }
+    ]
+    config, firewall = render(topology, 995)
+    assert config["outbounds"] == [
+        {"type": "direct", "tag": "direct-7", "routing_mark": 32007}
+    ]
+    assert "meta skuid 995 meta mark 32007 accept" in firewall
+    assert config["route"]["rules"][-1] == {"action": "reject"}
+    assert "ip daddr != 127.0.0.0/8 reject" in firewall
 
 
 @pytest.fixture
