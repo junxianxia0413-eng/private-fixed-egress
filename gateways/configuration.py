@@ -130,6 +130,7 @@ def render(groups, proxy_uid):
         raise ValueError("Invalid service UID")
     config = {
         "log": {"level": "warn"},
+        "dns": {"servers": []},
         "inbounds": [
             {"type": "socks", "tag": "health", "listen": "127.0.0.1", "listen_port": 10810}
         ],
@@ -197,8 +198,23 @@ def render(groups, proxy_uid):
             if group.get("exit_type", "ISP_PROXY") == "GATEWAY_DIRECT":
                 outbound = f"direct-{identifier}"
                 mark = DIRECT_MARK_BASE + identifier
+                resolver = f"direct-dns-{identifier}"
+                config["dns"]["servers"].append(
+                    {
+                        "type": "udp",
+                        "tag": resolver,
+                        "server": "1.1.1.1",
+                        "server_port": 53,
+                        "routing_mark": mark,
+                    }
+                )
                 config["outbounds"].append(
-                    {"type": "direct", "tag": outbound, "routing_mark": mark}
+                    {
+                        "type": "direct",
+                        "tag": outbound,
+                        "routing_mark": mark,
+                        "domain_resolver": resolver,
+                    }
                 )
                 direct_marks.add(mark)
             else:
@@ -258,6 +274,8 @@ def render(groups, proxy_uid):
             }
         )
     config["route"]["rules"].append({"action": "reject"})
+    if not config["dns"]["servers"]:
+        del config["dns"]
     firewall = [
         "add table inet pfem_guard",
         "flush table inet pfem_guard",
