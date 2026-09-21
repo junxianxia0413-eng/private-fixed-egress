@@ -9,6 +9,7 @@ from controller.services.database import audit, connect
 from controller.services.secrets import SecretStore
 
 MAX_DEVICES = 20
+AI_PROVIDERS = {"ANTHROPIC", "OPENAI", "GEMINI"}
 
 
 def available_exit(db, identifier):
@@ -48,6 +49,29 @@ def form_values(data, key):
     if isinstance(raw, str):
         return [raw]
     return list(raw) if isinstance(raw, (list, tuple)) else []
+
+
+def ai_selection(db, data, primary, current=None):
+    if "ai_exit_id" not in data and current is not None:
+        return current["ai_exit_id"], json.loads(current["ai_providers"])
+    raw_exit = str(data.get("ai_exit_id", "")).strip()
+    providers = [value.strip().upper() for value in form_values(data, "ai_provider")]
+    if not raw_exit:
+        if providers:
+            raise ValueError("启用 AI 提供商前请先选择 AI 专用出口。")
+        return None, []
+    try:
+        ai_exit_id = int(raw_exit)
+    except ValueError:
+        raise ValueError("请选择有效的 AI 专用出口。") from None
+    if not providers or len(providers) != len(set(providers)) or any(
+        provider not in AI_PROVIDERS for provider in providers
+    ):
+        raise ValueError("请选择至少一个有效的 AI 提供商。")
+    ai_exit = available_exit(db, ai_exit_id)
+    if ai_exit["gateway_id"] != primary["gateway_id"]:
+        raise ValueError("AI 专用出口必须与主出口位于同一网关。")
+    return ai_exit_id, providers
 
 
 def member_fields(data):
@@ -126,11 +150,13 @@ def register(settings, data, actor):
     try:
         with connect(settings.database_path) as db:
             db.execute("BEGIN IMMEDIATE")
-            available_exit(db, exit_id)
+            primary = available_exit(db, exit_id)
+            ai_exit_id, ai_providers = ai_selection(db, data, primary)
             members = resolve_members(db, fields, actor)
             identifier = db.execute(
-                "INSERT INTO subscription_groups(name,exit_id,created_at) VALUES (?,?,?)",
-                (name, exit_id, int(time.time())),
+                """INSERT INTO subscription_groups
+                (name,exit_id,ai_exit_id,ai_providers,created_at) VALUES (?,?,?,?,?)""",
+                (name, exit_id, ai_exit_id, json.dumps(ai_providers), int(time.time())),
             ).lastrowid
             for slot, device in enumerate(members, 1):
                 db.execute(
@@ -141,7 +167,15 @@ def register(settings, data, actor):
                 db,
                 actor,
                 "group.created",
-                json.dumps({"group_id": identifier, "exit_id": exit_id, "devices": members}),
+                json.dumps(
+                    {
+                        "group_id": identifier,
+                        "exit_id": exit_id,
+                        "ai_exit_id": ai_exit_id,
+                        "ai_providers": ai_providers,
+                        "devices": members,
+                    }
+                ),
             )
             return identifier
     except sqlite3.IntegrityError:
@@ -157,7 +191,7 @@ def update(settings, identifier, data, actor):
         with connect(settings.database_path) as db:
             db.execute("BEGIN IMMEDIATE")
             group = db.execute(
-                "SELECT id,name FROM subscription_groups WHERE id=?", (identifier,)
+                "SELECT * FROM subscription_groups WHERE id=?", (identifier,)
             ).fetchone()
             if not group:
                 raise ValueError("未找到订阅组。")
@@ -170,13 +204,34 @@ def update(settings, identifier, data, actor):
                 )
             ]
             members = resolve_members(db, fields, actor, identifier)
-            db.execute("UPDATE subscription_groups SET name=? WHERE id=?", (name, identifier))
+            primary = available_exit(db, group["exit_id"])
+            ai_exit_id, ai_providers = ai_selection(db, data, primary, group)
+            ai_changed = group["ai_exit_id"] != ai_exit_id or json.loads(
+                group["ai_providers"]
+            ) != ai_providers
+            db.execute(
+                """UPDATE subscription_groups SET name=?,ai_exit_id=?,ai_providers=?,
+                state=CASE WHEN ai_exit_id IS ? AND ai_providers=? THEN state ELSE 'PENDING' END
+                WHERE id=?""",
+                (
+                    name,
+                    ai_exit_id,
+                    json.dumps(ai_providers),
+                    ai_exit_id,
+                    json.dumps(ai_providers),
+                    identifier,
+                ),
+            )
             db.execute("DELETE FROM group_devices WHERE group_id=?", (identifier,))
             for slot, device in enumerate(members, 1):
                 db.execute(
                     "INSERT INTO group_devices(device_id,group_id,slot) VALUES (?,?,?)",
                     (device, identifier, slot),
                 )
+            if ai_changed and group["client_ref"]:
+                from controller.services.subscriptions import queue
+
+                queue(db, identifier, actor)
             audit(
                 db,
                 actor,
@@ -185,7 +240,12 @@ def update(settings, identifier, data, actor):
                     {
                         "group_id": identifier,
                         "before": {"name": group["name"], "devices": before},
-                        "after": {"name": name, "devices": members},
+                        "after": {
+                            "name": name,
+                            "devices": members,
+                            "ai_exit_id": ai_exit_id,
+                            "ai_providers": ai_providers,
+                        },
                     },
                     ensure_ascii=False,
                 ),
@@ -319,13 +379,16 @@ def snapshot(settings):
         rows = [
             dict(r)
             for r in db.execute("""SELECT s.id,s.name,s.exit_id,s.state,s.created_at,
-            e.name AS exit_name,e.gateway_id,e.exit_type,
+            e.name AS exit_name,e.gateway_id,e.exit_type,s.ai_exit_id,s.ai_providers,
             COALESCE(i.name,'VPS 自带公网 IP') AS isp_name,
-            COALESCE(i.expected_exit_ip,e.direct_expected_ip) AS expected_exit_ip
+            COALESCE(i.expected_exit_ip,e.direct_expected_ip) AS expected_exit_ip,
+            ae.name AS ai_exit_name
             FROM subscription_groups s JOIN exit_groups e ON s.exit_id=e.id
-            LEFT JOIN isp_exits i ON e.isp_id=i.id ORDER BY s.id""")
+            LEFT JOIN isp_exits i ON e.isp_id=i.id
+            LEFT JOIN exit_groups ae ON s.ai_exit_id=ae.id ORDER BY s.id""")
         ]
         for row in rows:
+            row["ai_providers"] = json.loads(row["ai_providers"])
             row["devices"] = [
                 dict(r)
                 for r in db.execute(

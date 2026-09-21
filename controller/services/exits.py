@@ -185,7 +185,8 @@ def desired(settings, job, excluded_clients=()):
             (job["gateway_id"], job["group_id"]),
         ).fetchall()
         clients = db.execute(
-            """SELECT s.id,s.exit_id,s.client_ref FROM subscription_groups s
+            """SELECT s.id,s.exit_id,s.client_ref,s.ai_exit_id,s.ai_providers
+            FROM subscription_groups s
             JOIN exit_groups e ON s.exit_id=e.id
             WHERE e.gateway_id=? AND s.client_ref IS NOT NULL""",
             (job["gateway_id"],),
@@ -233,12 +234,23 @@ def desired(settings, job, excluded_clients=()):
                 "expires_on": None if is_direct else row["expires_on"],
                 "probe_username": probe["username"],
                 "probe_password": probe["password"],
-                "clients": [
-                    {"id": c["id"], "password": store.get(c["client_ref"])["password"]}
-                    for c in clients
-                    if c["exit_id"] == row["id"] and c["id"] not in excluded_clients
-                ],
+                "clients": [],
             }
+        for client in clients:
+            if client["exit_id"] != row["id"] or client["id"] in excluded_clients:
+                continue
+            configured_client = {
+                "id": client["id"],
+                "password": store.get(client["client_ref"])["password"],
+            }
+            if client["ai_exit_id"] is not None:
+                configured_client.update(
+                    {
+                        "ai_exit_id": client["ai_exit_id"],
+                        "ai_providers": json.loads(client["ai_providers"]),
+                    }
+                )
+            configured["clients"].append(configured_client)
         if not is_direct:
             credentials = store.get(row["isp_secret"])
             configured.update(

@@ -227,4 +227,8 @@ MIGRATIONS = [
             AND NEW.direct_expected_ip IS NOT OLD.direct_expected_ip
             BEGIN SELECT RAISE(ABORT, 'Direct exit identity is immutable'); END""",
     ],
+    [
+        "ALTER TABLE subscription_groups ADD COLUMN ai_exit_id INTEGER REFERENCES exit_groups(id)",
+        "ALTER TABLE subscription_groups ADD COLUMN ai_providers TEXT NOT NULL DEFAULT '[]'",
+    ],
 ]

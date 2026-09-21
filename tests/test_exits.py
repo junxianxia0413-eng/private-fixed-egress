@@ -231,6 +231,79 @@ def test_direct_renderer_requires_explicit_mark_and_retains_default_reject():
     assert "ip daddr != 127.0.0.0/8 reject" in firewall
 
 
+def test_ai_domains_route_to_selected_exit_and_fail_closed():
+    topology = [
+        {
+            "id": 1,
+            "exit_type": "GATEWAY_DIRECT",
+            "enabled": True,
+            "expected_ip": "45.32.20.164",
+            "expires_on": None,
+            "probe_username": "pfem",
+            "probe_password": "A" * 40,
+            "clients": [
+                {
+                    "id": 3,
+                    "password": "B" * 40,
+                    "ai_exit_id": 2,
+                    "ai_providers": ["ANTHROPIC", "OPENAI"],
+                }
+            ],
+        },
+        {
+            "id": 2,
+            "exit_type": "GATEWAY_DIRECT",
+            "enabled": True,
+            "expected_ip": "8.8.8.8",
+            "expires_on": None,
+            "probe_username": "pfem",
+            "probe_password": "C" * 40,
+        },
+    ]
+    config, _ = render(topology, 995)
+    rules = config["route"]["rules"]
+    sniff_rule = {
+        "inbound": ["subscription-3", "subscription-tls-3"],
+        "action": "sniff",
+    }
+    sniff_index = rules.index(sniff_rule)
+    ai_rule = rules[sniff_index + 1]
+    assert ai_rule["outbound"] == "direct-2"
+    assert {"anthropic.com", "chatgpt.com"} <= set(ai_rule["domain_suffix"])
+    assert rules[sniff_index + 2]["outbound"] == "direct-1"
+
+    topology[1]["enabled"] = False
+    config, _ = render(topology, 995)
+    rules = config["route"]["rules"]
+    sniff_index = rules.index(sniff_rule)
+    assert rules[sniff_index + 1]["action"] == "reject"
+    assert rules[sniff_index + 2]["outbound"] == "direct-1"
+
+
+def test_ai_route_cannot_reference_another_gateway_configuration():
+    topology = [
+        {
+            "id": 1,
+            "exit_type": "GATEWAY_DIRECT",
+            "enabled": True,
+            "expected_ip": "45.32.20.164",
+            "expires_on": None,
+            "probe_username": "pfem",
+            "probe_password": "A" * 40,
+            "clients": [
+                {
+                    "id": 3,
+                    "password": "B" * 40,
+                    "ai_exit_id": 9,
+                    "ai_providers": ["ANTHROPIC"],
+                }
+            ],
+        }
+    ]
+    with pytest.raises(ValueError, match="AI exit"):
+        validate(topology)
+
+
 @pytest.fixture
 def topology():
     return [

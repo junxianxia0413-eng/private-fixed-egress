@@ -8,6 +8,11 @@ from datetime import date
 
 TLS_PORT_BASE = 13000
 DIRECT_MARK_BASE = 32000
+AI_DOMAINS = {
+    "ANTHROPIC": ["anthropic.com", "claude.ai", "claude.com"],
+    "OPENAI": ["openai.com", "chatgpt.com", "oaistatic.com", "oaiusercontent.com"],
+    "GEMINI": ["gemini.google.com", "aistudio.google.com", "generativelanguage.googleapis.com"],
+}
 
 
 def client_uuid(password):
@@ -37,6 +42,7 @@ def validate(groups):
         raise ValueError("At most 20 exit groups per Gateway")
     seen = set()
     clients_seen = set()
+    ai_references = []
     for group in groups:
         exit_type = group.get("exit_type", "ISP_PROXY")
         common = {
@@ -73,8 +79,10 @@ def validate(groups):
         if not isinstance(clients, list) or len(clients) > 20:
             raise ValueError("Invalid subscription clients")
         for client in clients:
+            allowed_client_fields = {"id", "password", "ai_exit_id", "ai_providers"}
             if (
-                set(client) != {"id", "password"}
+                not {"id", "password"} <= set(client)
+                or set(client) - allowed_client_fields
                 or type(client["id"]) is not int
                 or not 1 <= client["id"] <= 1000
                 or client["id"] in clients_seen
@@ -84,6 +92,22 @@ def validate(groups):
                 "[a-zA-Z0-9_-]{40,128}", client["password"]
             ):
                 raise ValueError("Generated subscription credential required")
+            ai_exit_id = client.get("ai_exit_id")
+            providers = client.get("ai_providers", [])
+            if ai_exit_id is None:
+                if providers:
+                    raise ValueError("AI providers require an AI exit")
+            elif (
+                type(ai_exit_id) is not int
+                or not 1 <= ai_exit_id <= 1000
+                or not isinstance(providers, list)
+                or not providers
+                or len(providers) != len(set(providers))
+                or any(provider not in AI_DOMAINS for provider in providers)
+            ):
+                raise ValueError("Invalid AI route")
+            if ai_exit_id is not None:
+                ai_references.append(ai_exit_id)
             clients_seen.add(client["id"])
         expires_on = group.get("expires_on")
         if exit_type == "GATEWAY_DIRECT" and expires_on is not None:
@@ -95,6 +119,8 @@ def validate(groups):
                 raise ValueError("Invalid ISP expiry date") from None
     if len(clients_seen) > 20:
         raise ValueError("At most 20 subscriptions per Gateway")
+    if any(identifier not in seen for identifier in ai_references):
+        raise ValueError("AI exit must belong to this Gateway configuration")
     return groups
 
 
@@ -114,6 +140,9 @@ def render(groups, proxy_uid):
     direct_marks = set()
     public_ports = []
     ports = [10810]
+    routes = []
+    outbound_by_group = {}
+    enabled_by_group = {group["id"]: group["enabled"] for group in groups}
     for group in groups:
         identifier = group["id"]
         tag = f"exit-{identifier}"
@@ -131,6 +160,7 @@ def render(groups, proxy_uid):
             }
         )
         inbound_tags = [tag]
+        client_routes = []
         for client in group.get("clients", []):
             client_tag = f"subscription-{client['id']}"
             tls_tag = f"subscription-tls-{client['id']}"
@@ -147,6 +177,7 @@ def render(groups, proxy_uid):
                     "password": client["password"],
                 }
             )
+            client_routes.append((client, [client_tag, tls_tag]))
             config["inbounds"].append(
                 {
                     "type": "vless",
@@ -185,11 +216,51 @@ def render(groups, proxy_uid):
                     }
                 )
                 allowed.add((group["server"], group["port"]))
-            config["route"]["rules"].append(
-                {"inbound": inbound_tags, "action": "route", "outbound": outbound}
-            )
+            outbound_by_group[identifier] = outbound
+            plain_inbounds = [tag]
+            for client, tags in client_routes:
+                if client.get("ai_exit_id") is None:
+                    plain_inbounds.extend(tags)
+                else:
+                    routes.append((group, tags, [client]))
+            routes.append((group, plain_inbounds, []))
         else:
+            routes.append((group, inbound_tags, []))
+    for group, inbound_tags, clients in routes:
+        if not group["enabled"]:
             config["route"]["rules"].append({"inbound": inbound_tags, "action": "reject"})
+            continue
+        client = clients[0] if clients else None
+        if client and client.get("ai_exit_id") is not None:
+            domains = sorted(
+                {
+                    domain
+                    for provider in client["ai_providers"]
+                    for domain in AI_DOMAINS[provider]
+                }
+            )
+            config["route"]["rules"].append({"inbound": inbound_tags, "action": "sniff"})
+            ai_exit_id = client["ai_exit_id"]
+            if enabled_by_group[ai_exit_id]:
+                config["route"]["rules"].append(
+                    {
+                        "inbound": inbound_tags,
+                        "domain_suffix": domains,
+                        "action": "route",
+                        "outbound": outbound_by_group[ai_exit_id],
+                    }
+                )
+            else:
+                config["route"]["rules"].append(
+                    {"inbound": inbound_tags, "domain_suffix": domains, "action": "reject"}
+                )
+        config["route"]["rules"].append(
+            {
+                "inbound": inbound_tags,
+                "action": "route",
+                "outbound": outbound_by_group[group["id"]],
+            }
+        )
     config["route"]["rules"].append({"action": "reject"})
     firewall = [
         "add table inet pfem_guard",

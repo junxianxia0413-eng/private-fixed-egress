@@ -152,7 +152,7 @@ def test_direct_exit_migration_preserves_existing_routes_and_subscriptions(tmp_p
     path = tmp_path / "legacy.db"
     db = sqlite3.connect(path)
     try:
-        for number, migration in enumerate(MIGRATIONS[:-1], 1):
+        for number, migration in enumerate(MIGRATIONS[:10], 1):
             for statement in migration:
                 db.execute(statement)
             db.execute(f"PRAGMA user_version={number}")
@@ -192,6 +192,7 @@ def test_direct_exit_migration_preserves_existing_routes_and_subscriptions(tmp_p
         group_row = db.execute("SELECT * FROM subscription_groups").fetchone()
         assert exit_row["exit_type"] == "ISP_PROXY" and exit_row["isp_id"] == 1
         assert group_row["exit_id"] == 1 and group_row["deployed_exit_id"] == 1
+        assert group_row["ai_exit_id"] is None and group_row["ai_providers"] == "[]"
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
 
 

@@ -14,7 +14,12 @@ def page(request, session, error=None, status_code=200, confirmation=None):
     settings = request.app.state.settings
     with connect(settings.database_path) as db:
         devices = [dict(r) for r in db.execute("SELECT id,name FROM devices ORDER BY name")]
-        exits = [dict(r) for r in db.execute("SELECT id,name FROM exit_groups WHERE applied=1")]
+        exits = [
+            dict(r)
+            for r in db.execute(
+                "SELECT id,name,gateway_id,exit_type FROM exit_groups WHERE applied=1 ORDER BY name"
+            )
+        ]
     return templates.TemplateResponse(
         request=request,
         name="groups.html",

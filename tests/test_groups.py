@@ -111,6 +111,54 @@ def test_group_accepts_one_to_twenty_devices(settings, subscription_data):
         )
 
 
+def test_group_ai_exit_is_optional_and_reaches_gateway_topology(
+    settings, subscription_data, isp_data
+):
+    second_isp = isps.register(
+        settings,
+        {**isp_data, "name": "AI-ISP", "host": "8.8.4.4", "expected_exit_ip": "8.8.4.4"},
+        "admin",
+    )
+    with connect(settings.database_path) as db:
+        db.execute(
+            """UPDATE isp_exits SET status='HEALTHY',current_exit_ip='8.8.4.4',tested_at=?
+            WHERE id=?""",
+            (int(time.time()), second_isp),
+        )
+    ai_exit = exits.register(
+        settings,
+        {"name": "AI-EXIT", "gateway_id": isp_data["gateway_id"], "isp_id": second_isp},
+        "admin",
+    )
+    with connect(settings.database_path) as db:
+        db.execute("UPDATE exit_groups SET applied=1,status='HEALTHY' WHERE id=?", (ai_exit,))
+    identifier = groups.register(
+        settings,
+        {
+            **subscription_data,
+            "ai_exit_id": str(ai_exit),
+            "ai_provider": ["ANTHROPIC", "OPENAI"],
+        },
+        "admin",
+    )
+    subscriptions.activate(settings, identifier, "admin")
+    with connect(settings.database_path) as db:
+        job = dict(db.execute("SELECT * FROM exit_jobs ORDER BY id DESC LIMIT 1").fetchone())
+    _, topology = exits.desired(settings, job)
+    client = next(c for group in topology for c in group.get("clients", []))
+    assert client["ai_exit_id"] == ai_exit
+    assert client["ai_providers"] == ["ANTHROPIC", "OPENAI"]
+    snapshot = groups.snapshot(settings)[0]
+    assert snapshot["ai_exit_name"] == "AI-EXIT"
+
+
+def test_group_rejects_ai_providers_without_ai_exit(settings, subscription_data):
+    with pytest.raises(ValueError, match="AI 专用出口"):
+        groups.register(
+            settings, {**subscription_data, "ai_provider": ["ANTHROPIC"]}, "admin"
+        )
+
+
 def test_change_requires_one_time_confirmation_and_records_old_new_isp(
     settings, subscription_data, isp_data
 ):

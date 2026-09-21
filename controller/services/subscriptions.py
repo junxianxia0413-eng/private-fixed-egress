@@ -49,7 +49,11 @@ def activate(settings, identifier, actor):
             ).fetchone()
             if not row:
                 raise ValueError("未找到订阅组。")
-            available_exit(db, row["exit_id"])
+            primary = available_exit(db, row["exit_id"])
+            if row["ai_exit_id"] is not None:
+                ai_exit = available_exit(db, row["ai_exit_id"])
+                if ai_exit["gateway_id"] != primary["gateway_id"]:
+                    raise ValueError("AI 专用出口必须与主出口位于同一网关。")
             if not row["client_ref"]:
                 client_ref = store.put({"password": secrets.token_urlsafe(32)})
                 created.append(client_ref)
