@@ -96,6 +96,10 @@ def test_one_subscription_url_negotiates_shadowrocket_clash_and_browser(
     assert document["proxies"][0]["type"] == "vless"
     assert document["proxies"][0]["server"] == "8.8.8.8"
     assert document["proxies"][0]["ws-opts"]["path"] == "/pfem-ws/13001"
+    assert document["proxies"][0]["tfo"] is True
+    assert document["proxies"][0]["client-fingerprint"] == "chrome"
+    assert document["tcp-concurrent"] is True
+    assert document["keep-alive-interval"] == 15
     assert document["rules"][0].startswith("MATCH,")
 
     browser = client.get(
@@ -104,6 +108,7 @@ def test_one_subscription_url_negotiates_shadowrocket_clash_and_browser(
     )
     browser_html = browser.content.decode()
     assert browser.status_code == 200 and "这一个地址" in browser_html
+    assert "不要开启“链式代理”" in browser_html and "系统代理" in browser_html
     assert f"{link}?format=clash" in browser_html
     explicit = client.get(link + "?format=clash")
     assert yaml.safe_load(explicit.text)["proxies"][0]["name"].endswith("443 稳定通道")
@@ -185,3 +190,4 @@ def test_phone_entry_requires_lease_and_cannot_directly_dial_other_hosts(topolog
     topology.append({**topology[0], "id": 2})
     with pytest.raises(ValueError):
         validate(topology)
+

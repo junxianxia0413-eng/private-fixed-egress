@@ -72,6 +72,7 @@ def bootstrap(gateway, credentials, managed):
                 "bootstrap.sh",
                 "remote_admin.py",
                 "remote_probe.py",
+                "network.conf",
                 "gateway.service",
                 "firewall.service",
                 "configuration.py",
@@ -145,3 +146,4 @@ def inspect(gateway, store, kind):
         if report["ssh_key_only"] is not True:
             raise GatewayError("SSH 密钥登录保护尚未完成，请重新部署。")
         return report
+

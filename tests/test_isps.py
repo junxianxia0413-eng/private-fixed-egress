@@ -344,6 +344,29 @@ def test_two_different_exit_ips_are_not_reported_stable(monkeypatch):
     assert not result["ok"] and result["error"] == "UNSTABLE_EXIT"
 
 
+def test_parallel_probe_failure_retries_both_sources_sequentially(monkeypatch):
+    class RejectParallel:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def map(self, *args):
+            raise TimeoutError
+
+    calls = []
+    monkeypatch.setattr(remote_probe, "ThreadPoolExecutor", lambda **kwargs: RejectParallel())
+    monkeypatch.setattr(
+        remote_probe,
+        "request_ip",
+        lambda config, address, target: calls.append(target) or ("1.1.1.1", 25),
+    )
+    result = remote_probe.request_all({"port": 1080}, "8.8.8.8")
+    assert result == [("1.1.1.1", 25), ("1.1.1.1", 25)]
+    assert calls == list(remote_probe.TARGETS)
+
+
 def test_direct_probe_requires_two_matching_independent_sources(monkeypatch):
     values = iter([("45.32.20.164", 30), ("45.32.20.164", 50)])
     monkeypatch.setattr(remote_probe, "request_direct_ip", lambda *a: next(values))
@@ -386,3 +409,4 @@ def test_remote_error_is_translated_without_diagnostic_leaks(settings, isp_data,
     with pytest.raises(GatewayError) as exc:
         isps.probe(settings, isp, gateway)
     assert isp_data["password"] not in str(exc.value)
+

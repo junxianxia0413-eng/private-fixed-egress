@@ -2,6 +2,7 @@ import json
 import os
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import paramiko
@@ -18,6 +19,16 @@ from controller.services.secrets import SecretStore
 from gateways import deployment
 from gateways.ssh import GatewayError, connect_gateway, generate_key, parse_host_key
 from tests.test_controller import PASSWORD, csrf, login
+
+
+def test_gateway_bootstrap_installs_long_distance_tcp_defaults():
+    root = Path(__file__).resolve().parents[1]
+    bootstrap = (root / "gateways" / "bootstrap.sh").read_text()
+    tuning = (root / "gateways" / "network.conf").read_text()
+    assert "network.conf /etc/sysctl.d/99-pfem-network.conf" in bootstrap
+    assert "/usr/sbin/sysctl --system" in bootstrap
+    assert "net.ipv4.tcp_congestion_control = bbr" in tuning
+    assert "net.ipv4.tcp_mtu_probing = 1" in tuning
 
 
 @pytest.fixture
@@ -254,3 +265,4 @@ def test_unhealthy_core_and_unfinished_ssh_protection_not_healthy(monkeypatch):
     monkeypatch.setattr(deployment, "connect_gateway", lambda *a: MagicMock())
     with pytest.raises(GatewayError, match="登录保护"):
         deployment.inspect({"managed_ref": "ref"}, MagicMock(), "check")
+

@@ -58,6 +58,8 @@ for module in __init__.py configuration.py transactions.py remote_probe.py guard
 done
 install -m 755 remote_admin.py /usr/local/sbin/pfem-gateway-admin
 install -m 755 remote_probe.py /usr/local/sbin/pfem-isp-probe
+install -m 644 network.conf /etc/sysctl.d/99-pfem-network.conf
+/usr/sbin/sysctl --system >/dev/null
 install -m 644 gateway.service /etc/systemd/system/pfem-gateway.service
 install -d -m 750 -o pfem-proxy -g pfem-proxy /var/lib/pfem-gateway
 cat > /etc/sudoers.d/pfem-gateway <<'SUDO'
@@ -97,3 +99,4 @@ systemctl restart pfem-gateway-firewall.service
 systemctl start pfem-gateway.service
 systemctl enable --now pfem-gateway-guard.timer
 echo PFEM_BOOTSTRAP_OK
+

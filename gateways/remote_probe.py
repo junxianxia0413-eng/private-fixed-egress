@@ -116,9 +116,14 @@ def request_direct_ip(target):
 
 def request_all(config, address):
     # Each source uses an independent SOCKS/TLS connection. Running them together keeps
-    # identity agreement while the operator waits only for the slower source.
-    with ThreadPoolExecutor(max_workers=len(TARGETS)) as pool:
-        return list(pool.map(lambda target: request_ip(config, address, target), TARGETS))
+    # identity agreement while the operator waits only for the slower source. Some ISP
+    # accounts briefly reject parallel sessions, so retry both sources sequentially before
+    # reporting the route unavailable.
+    try:
+        with ThreadPoolExecutor(max_workers=len(TARGETS)) as pool:
+            return list(pool.map(lambda target: request_ip(config, address, target), TARGETS))
+    except Exception:
+        return [request_ip(config, address, target) for target in TARGETS]
 
 
 def probe(config):
@@ -194,3 +199,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

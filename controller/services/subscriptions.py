@@ -194,6 +194,10 @@ def clash_payload(row, password):
         "allow-lan": False,
         "log-level": "warning",
         "ipv6": False,
+        "unified-delay": True,
+        "tcp-concurrent": True,
+        "keep-alive-interval": 15,
+        "keep-alive-idle": 30,
         "proxies": [
             {
                 "name": name,
@@ -205,6 +209,8 @@ def clash_payload(row, password):
                 "tls": True,
                 "servername": row["host"],
                 "skip-cert-verify": False,
+                "client-fingerprint": "chrome",
+                "tfo": True,
                 "udp": False,
                 "ws-opts": {
                     "path": tls_path(row["id"]),
@@ -228,3 +234,4 @@ def payload(settings, token, format_name="shadowrocket"):
     if format_name == "clash":
         return clash_payload(row, password)
     raise ValueError("不支持的订阅格式。")
+
