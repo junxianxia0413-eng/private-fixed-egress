@@ -1,6 +1,6 @@
 # Private Fixed-Egress Network Manager
 
-管理 Gateway、静态 SOCKS5 ISP、设备和固定出口的单管理员控制台。
+管理 Gateway、静态 SOCKS5 ISP、VPS 直出、设备、统一订阅和 AI 分流的单管理员控制台。
 
 ## 开发顺序
 
@@ -57,9 +57,9 @@ Debian 12 部署步骤见 [deploy/README.md](deploy/README.md)。
 开发任务见 [GitHub Issues](https://github.com/junxianxia0413-eng/private-fixed-egress/issues)。
 当前连接没有 Milestone 创建能力，暂用 Phase 0–10 共 11 个 Issue 跟踪。
 
-当前状态：Phase 0–10 已完成并部署到真实 Debian 12 VPS。控制台、Gateway、静态 SOCKS5 ISP、出口身份守卫、可编辑设备订阅组、Shadowrocket HTTPS 443 单节点订阅、持久入口授权和网络监控均已通过自动化与生产验证。
+当前状态：Phase 0–10 已完成并部署到真实 Debian 12 VPS。统一订阅同时支持 Shadowrocket 与 Clash Verge Rev；出口线路可显式选择固定 ISP 或 VPS 自带公网 IP；订阅组可选同网关 AI 专用出口。所有出口仍经过双站身份验证，未匹配流量默认拒绝。
 
-最简单的使用流程是：登录控制台 → 打开“设备”登记手机 → 打开“订阅组”生成链接 → iPhone 在 Shadowrocket 导入或刷新订阅 → 选择名称带“443 稳定通道”的节点并打开代理。同一订阅组的手机应看到同一个固定出口 IP。详细手机步骤和当前私密链接保存在部署输出目录的 `手机接入说明.md`，不会提交到 Git。
+最简单的使用流程是：登录控制台 → 创建并验证出口线路 → 打开“订阅组”登记设备、选择主出口和可选 AI 出口 → 生成一个链接或二维码 → 在 Shadowrocket 或 Clash Verge Rev 导入。同一个地址会按客户端返回正确格式；浏览器打开则显示说明页。
 
 “网络监控”页面会分别显示服务器到 ISP 代理入口的 TCP 延迟、抖动、ICMP 信息、服务通过率和资源使用率。它不等于手机到服务器的实际延迟，也不把网站完整响应时间冒充线路延迟；手机体验仍需用真实 Wi-Fi/蜂窝网络验收。
 

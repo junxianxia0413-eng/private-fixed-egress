@@ -43,6 +43,16 @@ Chrome 自动化默认关闭组件更新时曾出现 CT 校验错误；恢复正
 
 Phase 0–10 已完成；Wi-Fi/蜂窝切换、IPv6/DNS 和 UDP 游戏按实际使用环境继续观察。
 
+## 统一订阅、VPS 直出与 AI 分流（生产验证）
+
+- Windows 完整回归：133 passed / 16 Linux-only skipped；Ruff 与 Git whitespace 检查通过。Debian 候选版本回归、`sing-box check` 和 `nft -c` 也已通过。
+- 同一生产订阅地址已分别以 Shadowrocket、Clash Verge Rev 和浏览器 User-Agent 请求，依次得到 Base64 VLESS、Mihomo YAML 和使用说明页；响应禁止缓存且携带 `Vary: User-Agent, Accept`。
+- 从 MetaCubeX 官方 Release 下载 Mihomo v1.19.31，核对 GitHub API 发布的 SHA-256 后，真实内核成功加载生产订阅 YAML。
+- 生产数据库从 schema 10 升级到 schema 12。原有三条 ISP 线路、三个订阅组、令牌、设备映射和审计记录保持，`foreign_key_check` 无错误。
+- 东京 VPS 直出由两个独立检测站确认并锁定为该服务器公网 IPv4；第四条线路通过完整候选检查、应用和双站出口验证。为避免服务器仅返回不可达 IPv6 DNS 结果，每条直出线路使用带相同路由标记的 IPv4 DNS；默认未匹配出站仍由 nftables 拒绝。
+- 在生产数据的一个订阅上临时启用 Anthropic、OpenAI、Gemini AI 分流：真实网关配置通过 sing-box 检查并应用，AI 域名指向 VPS 直出，普通域名仍指向原 ISP。随后恢复默认设置并再次应用，三个现有订阅均保持 `READY`。
+- 验收期间第一条上游 ISP 曾有一次检测超时；另外两条 ISP 与 VPS 直出保持健康，未被第三方线路故障牵连。下一轮自动复查后该 ISP 恢复，最终四条出口、三个订阅和 Controller、Caddy、Gateway、守卫定时器全部健康。
+
 ## Phase 2 开发验证
 
 新增 21 项测试覆盖 v1 数据迁移、凭据引用、鉴权与 CSRF、恢复密钥下载、非法目标、重复注册清理、并发任务互斥、失败信息脱敏、成功后凭据清理、检测过期、重启中断恢复、SSH 主机密钥不匹配及未完成登录保护。

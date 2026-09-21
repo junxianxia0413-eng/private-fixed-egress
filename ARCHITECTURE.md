@@ -3,7 +3,7 @@
 ## 部署边界
 
 Controller 使用 Debian 12、Python 3.11+、FastAPI、Jinja2、SQLite、Caddy 和 systemd。
-Controller 只管理资源；用户业务流量走 Gateway → SOCKS5 ISP，不通过 Controller。
+Controller 只管理资源；用户业务流量走 Gateway，再按显式线路选择 SOCKS5 ISP 或 Gateway 自带公网出口，不通过 Controller Web 进程。
 Gateway 使用 Debian 12、sing-box、systemd 和 nftables，通过受校验的 SSH 连接管理。
 首次部署允许控制台与未来 Gateway 共用一台 VPS，减少资源需求；仍按独立服务和配置目录管理。当前 Controller、Gateway 与 ISP 检测均已上线。
 没有域名时可使用公网 IPv4 的 Let's Encrypt 短期证书，由 Caddy 自动续期。主机已有防火墙时保留管理规则，仅补充网站端口。
@@ -31,7 +31,7 @@ SQLite 开启外键、WAL 和 busy timeout；迁移在事务内按 user_version 
 首次探测成功才写入 expected_exit_ip。之后探测只更新 current_exit_ip，漂移即 CRITICAL。
 网关部署、探测、配置应用必须区分失败与未知，禁止虚构指标或直接标记 Healthy。
 配置以 Gateway 为单位串行变更：生成 → sing-box check → 备份 → 应用 → 端到端出口校验 → 成功；失败回滚并验证恢复。运行期入口租约按出口线路隔离：临时可用性失败先重试并允许一个短暂容错周期，连续失败只关闭对应线路；出口 IP 不匹配立即关闭对应线路。守卫事件保留最近 200 条无凭据状态，便于定位间歇故障。
-路由不可有 ISP 失败后直连出口的降级路径。更换 ISP 是显式的人工确认事务。
+路由不可有 ISP 失败后直连出口的降级路径。VPS 直出必须是管理员显式创建并由双站锁定身份的 `GATEWAY_DIRECT` 线路；每条直出使用独立路由标记和 nftables 许可。更换出口是显式的人工确认事务。
 Controller 数据表只存秘密文件引用；Gateway 的运行配置与回滚快照需要保存对应凭据，分别限制为 root/代理服务只读和 root 私有。不可在日志、错误详情、订阅中泄露 ISP 凭据。
 Gateway SSH 首次登记需核验 host key，关闭密码认证前验证管理密钥及 sudo，避免锁出。
 
@@ -52,4 +52,10 @@ exit_groups 绑定 Gateway 与 ISP，exit_jobs 按 Gateway 串行处理。只接
 
 未提交事务由 Gateway 的 120 秒定时器自动恢复；重启后在防火墙和核心启动前恢复。失败回滚保留原 ISP 身份，回滚可用性单独验证。配置状态不确定时控制台显示 UNKNOWN/CONFIG_FAILED，不继续标为正常。
 
-Phase 4 入口仅监听 loopback，尚无手机公网入口。核心只能连接获准 ISP 的精确 IPv4/TCP 端口，拒绝其他 IPv4/IPv6 出站。开启手机入口前仍须完成周期线路验证、异常线路阻断和订阅管理。
+公网入口由 Caddy 在 HTTPS 443 接收 VLESS WebSocket，再转发到每个订阅独立的 loopback 端口。核心只能连接获准 ISP 的精确 IPv4/TCP 端口，或使用已登记 VPS 直出线路的专属路由标记；其他 IPv4/IPv6 出站全部拒绝。周期检测、异常线路隔离、入口租约和订阅状态共同控制可用性。
+
+## 统一订阅与 AI 路由
+
+`GET /sub/{token}` 是唯一订阅地址。Shadowrocket 得到 Base64 VLESS 列表，Clash Verge Rev / Mihomo 得到 YAML；普通浏览器得到导入说明。显式 `?format=shadowrocket` 和 `?format=clash` 用于客户端识别失败时兼容。令牌轮换对所有格式同时生效，响应禁止缓存。
+
+订阅组可选同一 Gateway 上的 AI 专用出口。sing-box 对该订阅入口执行 TLS SNI / HTTP Host 识别；Anthropic、OpenAI 或 Gemini 域名走 AI 出口，其他请求走主出口。AI 出口不可用时匹配流量拒绝，不回退到主出口；未选择 AI 出口的旧订阅不增加分流规则。首版不跨 VPS 转发。
