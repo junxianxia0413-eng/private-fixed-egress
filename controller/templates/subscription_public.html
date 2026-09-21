@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>导入订阅</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="public-subscription panel">
+    <p class="eyebrow">PRIVATE NETWORK</p>
+    <h1>导入订阅</h1>
+    <p>这一个地址同时支持 Shadowrocket 与 Clash Verge Rev。</p>
+    <label>统一订阅地址<input value="{{ link }}" readonly></label>
+    <div class="gateway-actions">
+      <a class="button-link" href="{{ link }}?format=shadowrocket">Shadowrocket 格式</a>
+      <a class="button-link" href="{{ link }}?format=clash">Clash Verge 格式</a>
+    </div>
+    <p class="fine">请把统一地址添加为远程订阅。格式链接仅用于客户端无法自动识别时排查。</p>
+  </main>
+</body>
+</html>

@@ -11,18 +11,58 @@ router = APIRouter()
 
 @router.get("/sub/{token}")
 def subscription(request: Request, token: str):
+    requested = request.query_params.get("format", "").lower()
+    if requested and requested not in {"shadowrocket", "clash"}:
+        return PlainTextResponse("Unsupported subscription format", status_code=400)
+    user_agent = request.headers.get("user-agent", "").lower()
+    accept = request.headers.get("accept", "").lower()
+    if requested:
+        format_name = requested
+    elif any(value in user_agent for value in ("clash-verge", "mihomo", "clash.meta")):
+        format_name = "clash"
+    elif "shadowrocket" in user_agent:
+        format_name = "shadowrocket"
+    elif "text/html" in accept and any(
+        value in user_agent for value in ("mozilla/", "chrome/", "safari/")
+    ):
+        format_name = "html"
+    else:
+        format_name = "shadowrocket"
     try:
-        content = subscriptions.payload(request.app.state.settings, token)
+        content = subscriptions.payload(
+            request.app.state.settings,
+            token,
+            "shadowrocket" if format_name == "html" else format_name,
+        )
     except ValueError:
         return PlainTextResponse(
             "Subscription temporarily unavailable",
             status_code=503,
-            headers={"Retry-After": "60", "Referrer-Policy": "no-referrer"},
+            headers={
+                "Retry-After": "60",
+                "Referrer-Policy": "no-referrer",
+                "Cache-Control": "private, no-store",
+                "Vary": "User-Agent, Accept",
+            },
+        )
+    headers = {
+        "Referrer-Policy": "no-referrer",
+        "Cache-Control": "private, no-store",
+        "Vary": "User-Agent, Accept",
+        "profile-update-interval": "1",
+    }
+    if content and format_name == "html":
+        return templates.TemplateResponse(
+            request=request,
+            name="subscription_public.html",
+            headers={**headers, "Content-Type": "text/html; charset=utf-8"},
+            context={"link": str(request.url).split("?", 1)[0]},
         )
     return PlainTextResponse(
         content or "Not found",
         status_code=200 if content else 404,
-        headers={"Referrer-Policy": "no-referrer", "profile-update-interval": "1"},
+        headers=headers,
+        media_type="text/yaml" if format_name == "clash" else "text/plain",
     )
 
 

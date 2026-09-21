@@ -8,6 +8,7 @@ import time
 from urllib.parse import quote, urlencode
 
 import segno
+import yaml
 
 from controller.services.database import audit, connect
 from controller.services.groups import available_exit
@@ -122,7 +123,7 @@ def rotate(settings, identifier, actor):
     store.delete(row["token_ref"])
 
 
-def payload(settings, token):
+def _record(settings, token):
     if not re.fullmatch("[a-zA-Z0-9_-]{43}", token):
         return None
     with connect(settings.database_path) as db:
@@ -146,6 +147,10 @@ def payload(settings, token):
     ):
         raise ValueError("出口配置尚未就绪或检查异常，请稍后重试。")
     password = SecretStore(settings.secret_directory).get(row["client_ref"])["password"]
+    return dict(row), password
+
+
+def _node(row, password):
     query = urlencode(
         {
             "encryption": "none",
@@ -161,4 +166,53 @@ def payload(settings, token):
         f"vless://{client_uuid(password)}@{row['host']}:443?{query}#"
         f"{quote(row['name'] + ' · 443 稳定通道', safe='')}"
     )
-    return base64.b64encode((node + "\n").encode()).decode()
+    return node
+
+
+def shadowrocket_payload(row, password):
+    return base64.b64encode((_node(row, password) + "\n").encode()).decode()
+
+
+def clash_payload(row, password):
+    name = row["name"] + " · 443 稳定通道"
+    proxy_group = row["name"] + " · 固定出口"
+    document = {
+        "mixed-port": 7890,
+        "mode": "rule",
+        "allow-lan": False,
+        "log-level": "warning",
+        "ipv6": False,
+        "proxies": [
+            {
+                "name": name,
+                "type": "vless",
+                "server": row["host"],
+                "port": 443,
+                "uuid": client_uuid(password),
+                "network": "ws",
+                "tls": True,
+                "servername": row["host"],
+                "skip-cert-verify": False,
+                "udp": False,
+                "ws-opts": {
+                    "path": tls_path(row["id"]),
+                    "headers": {"Host": row["host"]},
+                },
+            }
+        ],
+        "proxy-groups": [{"name": proxy_group, "type": "select", "proxies": [name]}],
+        "rules": [f"MATCH,{proxy_group}"],
+    }
+    return yaml.safe_dump(document, allow_unicode=True, sort_keys=False)
+
+
+def payload(settings, token, format_name="shadowrocket"):
+    found = _record(settings, token)
+    if not found:
+        return None
+    row, password = found
+    if format_name == "shadowrocket":
+        return shadowrocket_payload(row, password)
+    if format_name == "clash":
+        return clash_payload(row, password)
+    raise ValueError("不支持的订阅格式。")

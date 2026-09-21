@@ -4,6 +4,7 @@ import json
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import pytest
+import yaml
 
 from controller.services import groups, subscriptions
 from controller.services.database import connect
@@ -71,6 +72,41 @@ def test_subscription_link_requires_csrf_and_secrets_never_appear_in_inventory(
     assert link in response.text and link not in client.get("/api/groups").text
     assert client.get("/sub/not-a-token").status_code == 404
     assert client.get(link).status_code == 503
+
+
+def test_one_subscription_url_negotiates_shadowrocket_clash_and_browser(
+    client, settings, subscription_data
+):
+    identifier = groups.register(settings, subscription_data, "admin")
+    subscriptions.activate(settings, identifier, "admin")
+    with connect(settings.database_path) as db:
+        db.execute("UPDATE subscription_groups SET state='READY',deployed_exit_id=exit_id")
+    link = subscriptions.link(settings, identifier)
+
+    legacy = client.get(link, headers={"user-agent": "Shadowrocket/2.2"})
+    assert legacy.status_code == 200
+    assert base64.b64decode(legacy.text).decode().startswith("vless://")
+    assert legacy.headers["cache-control"] == "no-store"
+    assert legacy.headers["vary"] == "User-Agent, Accept"
+
+    clash = client.get(link, headers={"user-agent": "clash-verge/v2.4.0"})
+    document = yaml.safe_load(clash.text)
+    assert clash.status_code == 200 and clash.headers["content-type"].startswith("text/yaml")
+    assert document["proxies"][0]["type"] == "vless"
+    assert document["proxies"][0]["server"] == "8.8.8.8"
+    assert document["proxies"][0]["ws-opts"]["path"] == "/pfem-ws/13001"
+    assert document["rules"][0].startswith("MATCH,")
+
+    browser = client.get(
+        link,
+        headers={"user-agent": "Mozilla/5.0 Chrome/140", "accept": "text/html"},
+    )
+    browser_html = browser.content.decode()
+    assert browser.status_code == 200 and "这一个地址" in browser_html
+    assert f"{link}?format=clash" in browser_html
+    explicit = client.get(link + "?format=clash")
+    assert yaml.safe_load(explicit.text)["proxies"][0]["name"].endswith("443 稳定通道")
+    assert client.get(link + "?format=unknown").status_code == 400
 
 
 def test_subscription_qr_contains_svg_without_putting_link_in_image_url():
