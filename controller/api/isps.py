@@ -96,3 +96,13 @@ async def edit_isp_connection(request: Request, isp_id: int):
     except (ValueError, GatewayError) as exc:
         return page(request, session, str(exc), 400)
     return RedirectResponse("/isps", status_code=303)
+
+
+@router.post("/isps/{isp_id}/delete")
+async def delete_isp(request: Request, isp_id: int):
+    session, _ = await authenticated_form(request)
+    try:
+        isps.delete(request.app.state.settings, isp_id, session["username"])
+    except ValueError as exc:
+        return page(request, session, str(exc), 400)
+    return RedirectResponse("/isps", status_code=303)

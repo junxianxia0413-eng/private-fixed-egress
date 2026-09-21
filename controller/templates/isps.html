@@ -12,7 +12,7 @@
       <h2>固定出口身份保护</h2><p>首次检测成功后锁定出口 IP。发现变化立即标记异常，保留原始 IP，不自动更换 ISP。</p>
     </div></section>
     <section class="gateway-grid" aria-label="ISP 列表">
-    {% for isp in isps %}<article class="panel gateway-card">
+    {% for isp in isps %}<article class="panel gateway-card has-card-menu">
       <div class="section-heading"><h2>{{ isp.name }}</h2><span class="pill {{ 'online' if isp.status == 'HEALTHY' else '' }}">
         {{ {'NEW':'等待检测','CHECKING':'正在检测','HEALTHY':'出口正常','CRITICAL':'出口异常','UNKNOWN':'待重新检测'}.get(isp.status,isp.status) }}</span></div>
       <p class="muted">SOCKS5 · {{ isp.provider or '服务商未填写' }}</p>
@@ -51,6 +51,13 @@
           <button class="quiet" type="submit">验证并保存</button>
         </form>
       </details>
+      <details class="card-menu">
+        <summary aria-label="{{ isp.name }} 操作"><span class="six-dot-icon" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span></summary>
+        <div class="card-menu-popover"><form action="/isps/{{ isp.id }}/delete" method="post">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="danger-action" type="submit" data-confirm-delete data-confirm-message="确定删除“{{ isp.name }}”吗？检测记录和保存的账密会同时清除。">删除固定出口</button>
+        </form></div>
+      </details>
     </article>{% else %}<article class="panel"><h2>添加第一个静态 ISP</h2><p class="muted">准备好商家的 SOCKS5 连接信息，即可测试真实出口。</p></article>{% endfor %}
     </section>
     <details class="panel add-gateway" {{ 'open' if not isps or error else '' }}><summary>＋ 添加 ISP</summary>
@@ -84,4 +91,4 @@
   </main>
 </div>
 {% endblock %}
-{% block scripts %}<script src="/static/isps.js" defer></script>{% endblock %}
+{% block scripts %}<script src="/static/isps.js" defer></script><script src="/static/card-actions.js" defer></script>{% endblock %}

@@ -3,8 +3,10 @@ import time
 
 import pytest
 
-from controller.services import devices, exits, groups, isps
+from controller.services import devices, exits, groups, isps, subscriptions
 from controller.services.database import connect
+from controller.services.secrets import SecretStore
+from gateways.ssh import GatewayError
 from tests.test_controller import csrf, login
 from tests.test_exits import group_data  # noqa: F401
 from tests.test_gateways import client, data, settings  # noqa: F401
@@ -174,3 +176,97 @@ def test_group_pages_authentication_and_csrf(client, subscription_data):
         ).status_code
         == 400
     )
+
+
+def test_unactivated_group_delete_keeps_device_inventory(settings, subscription_data):
+    identifier = groups.register(settings, subscription_data, "admin")
+    groups.delete(settings, identifier, "admin")
+    with connect(settings.database_path) as db:
+        assert not db.execute(
+            "SELECT 1 FROM subscription_groups WHERE id=?", (identifier,)
+        ).fetchone()
+        assert db.execute("SELECT COUNT(*) FROM group_devices").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM devices").fetchone()[0] == 2
+        assert db.execute("SELECT action FROM audit_events ORDER BY id DESC").fetchone()[0] == (
+            "group.deleted"
+        )
+
+
+def activated_group(settings, subscription_data):
+    identifier = groups.register(settings, subscription_data, "admin")
+    subscriptions.activate(settings, identifier, "admin")
+    with connect(settings.database_path) as db:
+        db.execute("UPDATE exit_jobs SET state='SUCCEEDED'")
+        db.execute(
+            "UPDATE subscription_groups SET state='READY',deployed_exit_id=exit_id WHERE id=?",
+            (identifier,),
+        )
+        row = dict(
+            db.execute(
+                "SELECT client_ref,token_ref FROM subscription_groups WHERE id=?", (identifier,)
+            ).fetchone()
+        )
+    return identifier, row
+
+
+def test_activated_group_delete_removes_remote_client_and_secrets(
+    settings, subscription_data, monkeypatch
+):
+    identifier, references = activated_group(settings, subscription_data)
+
+    def applied(_settings, _gateway, configured, _transaction, _stage):
+        assert all(
+            client["id"] != identifier
+            for group in configured
+            for client in group.get("clients", [])
+        )
+        return {
+            group["id"]: {"exit_ip": group["expected_ip"], "latency_ms": 20}
+            for group in configured
+            if group["enabled"]
+        }, "b" * 64
+
+    monkeypatch.setattr(exits, "apply_remote", applied)
+    groups.delete(settings, identifier, "admin")
+    with connect(settings.database_path) as db:
+        assert not db.execute("SELECT 1 FROM subscription_groups").fetchone()
+        assert db.execute("SELECT state FROM exit_jobs ORDER BY id DESC").fetchone()[0] == (
+            "SUCCEEDED"
+        )
+    store = SecretStore(settings.secret_directory)
+    assert all(not store.path(reference).exists() for reference in references.values())
+
+
+def test_failed_remote_group_delete_preserves_subscription(
+    settings, subscription_data, monkeypatch
+):
+    identifier, references = activated_group(settings, subscription_data)
+    monkeypatch.setattr(
+        exits,
+        "apply_remote",
+        lambda *_: (_ for _ in ()).throw(GatewayError("测试回滚")),
+    )
+    with pytest.raises(ValueError, match="原订阅继续保留"):
+        groups.delete(settings, identifier, "admin")
+    with connect(settings.database_path) as db:
+        assert (
+            db.execute(
+                "SELECT state FROM subscription_groups WHERE id=?", (identifier,)
+            ).fetchone()[0]
+            == "READY"
+        )
+        assert db.execute("SELECT state FROM exit_jobs ORDER BY id DESC").fetchone()[0] == "FAILED"
+    store = SecretStore(settings.secret_directory)
+    assert all(store.path(reference).exists() for reference in references.values())
+
+
+def test_group_delete_menu_requires_confirmation_and_csrf(client, subscription_data):
+    groups.register(client.app.state.settings, subscription_data, "admin")
+    login(client)
+    page = client.get("/groups")
+    assert "six-dot-icon" in page.text and "删除订阅组" in page.text
+    assert "已导入手机的该节点也会被撤销" in page.text
+    assert 'src="/static/card-actions.js"' in page.text
+    assert client.post("/groups/1/delete").status_code == 403
+    token = csrf(page)
+    assert client.post("/groups/1/delete", data={"csrf": token}).status_code == 303

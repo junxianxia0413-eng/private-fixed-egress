@@ -112,7 +112,7 @@ def snapshot(settings):
     return values, jobs
 
 
-def desired(settings, job):
+def desired(settings, job, excluded_clients=()):
     store = SecretStore(settings.secret_directory)
     with connect(settings.database_path) as db:
         gateway = dict(
@@ -175,7 +175,7 @@ def desired(settings, job):
                 "clients": [
                     {"id": c["id"], "password": store.get(c["client_ref"])["password"]}
                     for c in clients
-                    if c["exit_id"] == row["id"]
+                    if c["exit_id"] == row["id"] and c["id"] not in excluded_clients
                 ],
             }
         )

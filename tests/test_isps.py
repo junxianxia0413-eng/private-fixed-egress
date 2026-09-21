@@ -1,6 +1,7 @@
 # ruff: noqa: F811
 import json
 import sqlite3
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -207,6 +208,51 @@ def test_isp_page_offers_safe_connection_edit_and_link_import(client, settings, 
     assert isp_data["password"] not in page.text
 
 
+def test_unused_isp_can_be_deleted_but_bound_isp_is_protected(settings, isp_data):  # noqa: F811
+    identifier = isps.register(settings, isp_data, "admin")
+    with connect(settings.database_path) as db:
+        reference = db.execute(
+            "SELECT secret_ref FROM isp_exits WHERE id=?", (identifier,)
+        ).fetchone()[0]
+    isps.delete(settings, identifier, "admin")
+    with connect(settings.database_path) as db:
+        assert not db.execute("SELECT 1 FROM isp_exits WHERE id=?", (identifier,)).fetchone()
+        assert db.execute("SELECT action FROM audit_events ORDER BY id DESC").fetchone()[0] == (
+            "isp.deleted"
+        )
+    assert not SecretStore(settings.secret_directory).path(reference).exists()
+
+    bound = isps.register(
+        settings, {**isp_data, "name": "BOUND", "expected_exit_ip": "1.1.1.1"}, "admin"
+    )
+    with connect(settings.database_path) as db:
+        db.execute("UPDATE gateways SET bootstrap_ref=NULL")
+        db.execute(
+            "UPDATE isp_exits SET status='HEALTHY',current_exit_ip='1.1.1.1',tested_at=?",
+            (int(time.time()),),
+        )
+    from controller.services import exits
+
+    exits.register(
+        settings,
+        {"name": "IN-USE", "gateway_id": isp_data["gateway_id"], "isp_id": str(bound)},
+        "admin",
+    )
+    with pytest.raises(ValueError, match="IN-USE"):
+        isps.delete(settings, bound, "admin")
+
+
+def test_isp_delete_menu_requires_csrf(client, settings, isp_data):  # noqa: F811
+    identifier = isps.register(settings, isp_data, "admin")
+    login(client)
+    page = client.get("/isps")
+    assert "six-dot-icon" in page.text and "删除固定出口" in page.text
+    assert 'src="/static/card-actions.js"' in page.text
+    assert client.post(f"/isps/{identifier}/delete").status_code == 403
+    token = csrf(page)
+    assert client.post(f"/isps/{identifier}/delete", data={"csrf": token}).status_code == 303
+
+
 def test_minute_scheduler_does_not_duplicate_pending_or_active_jobs(
     settings, isp_data, monkeypatch
 ):  # noqa: F811
@@ -300,7 +346,6 @@ def test_two_different_exit_ips_are_not_reported_stable(monkeypatch):
 
 def test_independent_identity_sources_run_concurrently(monkeypatch):
     import threading
-    import time
 
     barrier = threading.Barrier(2)
 

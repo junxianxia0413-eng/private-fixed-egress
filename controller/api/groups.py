@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from starlette.concurrency import run_in_threadpool
 
 from controller.api.dashboard import session_for, templates
 from controller.api.gateways import authenticated_form
@@ -74,6 +75,18 @@ async def edit(request: Request, identifier: int):
     session, form = await authenticated_form(request)
     try:
         groups.update(request.app.state.settings, identifier, form, session["username"])
+    except ValueError as exc:
+        return page(request, session, str(exc), 400)
+    return RedirectResponse("/groups", status_code=303)
+
+
+@router.post("/groups/{identifier}/delete")
+async def delete(request: Request, identifier: int):
+    session, _ = await authenticated_form(request)
+    try:
+        await run_in_threadpool(
+            groups.delete, request.app.state.settings, identifier, session["username"]
+        )
     except ValueError as exc:
         return page(request, session, str(exc), 400)
     return RedirectResponse("/groups", status_code=303)

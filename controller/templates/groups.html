@@ -14,7 +14,7 @@
 
     <datalist id="device-options">{% for d in devices %}<option value="{{ d.name }}"></option>{% endfor %}</datalist>
     <section class="gateway-grid">
-    {% for g in groups %}<article class="panel gateway-card">
+    {% for g in groups %}<article class="panel gateway-card has-card-menu">
       <div class="section-heading"><h2>{{ g.name }}</h2><span class="pill">{{ '已配置' if g.state == 'READY' else '待应用' }}</span></div>
       <dl class="facts"><div><dt>设备</dt><dd>{% for d in g.devices %}{{ d.name }}{% if not loop.last %}<br>{% endif %}{% endfor %}</dd></div><div><dt>所选线路</dt><dd>{{ g.exit_name }}</dd></div><div><dt>固定 ISP</dt><dd>{{ g.isp_name }}</dd></div><div><dt>预期出口</dt><dd>{{ g.expected_exit_ip }}</dd></div></dl>
       {% if g.state != 'READY' %}<p class="fine">订阅配置尚未完成，不代表设备已经切换到所选出口。</p>{% endif %}
@@ -37,6 +37,13 @@
       </details>
       <details><summary>更换订阅链接</summary><p class="fine">旧链接立即失效；已导入的节点仍可连接。</p><form action="/groups/{{ g.id }}/rotate" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="quiet" type="submit">更换链接</button></form></details>
       <details><summary>更换出口</summary><form action="/groups/{{ g.id }}/change" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label>新线路<select name="exit_id">{% for e in exits %}<option value="{{ e.id }}" {{ 'selected' if e.id == g.exit_id else '' }}>{{ e.name }}</option>{% endfor %}</select></label><button class="quiet" type="submit">查看变更并确认</button></form></details>
+      <details class="card-menu">
+        <summary aria-label="{{ g.name }} 操作"><span class="six-dot-icon" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span></summary>
+        <div class="card-menu-popover"><form action="/groups/{{ g.id }}/delete" method="post">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="danger-action" type="submit" data-confirm-delete data-confirm-message="确定删除订阅组“{{ g.name }}”吗？订阅链接会失效，已导入手机的该节点也会被撤销。">删除订阅组</button>
+        </form></div>
+      </details>
     </article>{% else %}<article class="panel"><h2>创建第一个订阅组</h2><p class="muted">填写至少一台设备，并选择已经验证的出口线路。</p></article>{% endfor %}
     </section>
 
@@ -62,4 +69,4 @@
   </main>
 </div>
 {% endblock %}
-{% block scripts %}<script src="/static/groups.js" defer></script>{% endblock %}
+{% block scripts %}<script src="/static/groups.js" defer></script><script src="/static/card-actions.js" defer></script>{% endblock %}

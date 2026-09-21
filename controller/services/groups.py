@@ -6,6 +6,7 @@ import time
 from datetime import UTC, date, datetime
 
 from controller.services.database import audit, connect
+from controller.services.secrets import SecretStore
 
 MAX_DEVICES = 20
 
@@ -179,6 +180,126 @@ def update(settings, identifier, data, actor):
             )
     except sqlite3.IntegrityError:
         raise ValueError("组名称已存在，或所选设备已经属于其他订阅组。") from None
+
+
+def delete(settings, identifier, actor):
+    from controller.services import exits
+    from gateways.ssh import GatewayError
+
+    store = SecretStore(settings.secret_directory)
+    with connect(settings.database_path) as db:
+        db.execute("BEGIN IMMEDIATE")
+        group = db.execute(
+            """SELECT s.*,e.gateway_id FROM subscription_groups s
+            JOIN exit_groups e ON e.id=s.exit_id WHERE s.id=?""",
+            (identifier,),
+        ).fetchone()
+        if not group:
+            raise ValueError("未找到订阅组。")
+        if db.execute(
+            "SELECT 1 FROM exit_jobs WHERE gateway_id=? AND state IN ('QUEUED','RUNNING')",
+            (group["gateway_id"],),
+        ).fetchone():
+            raise ValueError("网关正在应用配置，请稍后再删除。")
+        references = [group[key] for key in ("client_ref", "token_ref") if group[key]]
+        needs_remote_removal = bool(group["client_ref"] and group["deployed_exit_id"])
+        if not needs_remote_removal:
+            db.execute("DELETE FROM group_confirmations WHERE group_id=?", (identifier,))
+            db.execute("DELETE FROM group_devices WHERE group_id=?", (identifier,))
+            db.execute("DELETE FROM subscription_groups WHERE id=?", (identifier,))
+            audit(
+                db,
+                actor,
+                "group.deleted",
+                json.dumps({"group_id": identifier, "name": group["name"]}, ensure_ascii=False),
+            )
+            transaction = None
+        else:
+            transaction = secrets.token_hex(16)
+            job_id = db.execute(
+                """INSERT INTO exit_jobs(group_id,gateway_id,actor,transaction_id,state,stage,
+                created_at) VALUES (?,?,?,?,'RUNNING','PREPARING',?)""",
+                (
+                    group["exit_id"],
+                    group["gateway_id"],
+                    actor,
+                    transaction,
+                    int(time.time()),
+                ),
+            ).lastrowid
+            audit(db, actor, "group.delete.started", f"group_id={identifier}")
+    if not transaction:
+        for reference in references:
+            store.delete(reference)
+        return
+
+    job = {
+        "id": job_id,
+        "gateway_id": group["gateway_id"],
+        "group_id": group["exit_id"],
+        "transaction_id": transaction,
+    }
+
+    def stage(value):
+        with connect(settings.database_path) as db:
+            db.execute("UPDATE exit_jobs SET stage=? WHERE id=?", (value, job_id))
+
+    try:
+        gateway, desired_groups = exits.desired(settings, job, {identifier})
+        results, digest = exits.apply_remote(settings, gateway, desired_groups, transaction, stage)
+        with connect(settings.database_path) as db:
+            db.execute("BEGIN IMMEDIATE")
+            latest = db.execute(
+                "SELECT exit_id,client_ref,token_ref FROM subscription_groups WHERE id=?",
+                (identifier,),
+            ).fetchone()
+            if (
+                not latest
+                or latest["exit_id"] != group["exit_id"]
+                or latest["client_ref"] != group["client_ref"]
+                or latest["token_ref"] != group["token_ref"]
+            ):
+                raise ValueError("订阅组已被其他操作修改，请刷新后重试。")
+            for configured in desired_groups:
+                result = results.get(configured["id"], {})
+                db.execute(
+                    """UPDATE exit_groups SET status=?,last_error=?,current_exit_ip=?,
+                    latency_ms=?,checked_at=?,config_hash=? WHERE id=?""",
+                    (
+                        "HEALTHY" if configured["enabled"] else "CRITICAL",
+                        "" if configured["enabled"] else "ISP 异常，路由已关闭。",
+                        result.get("exit_ip"),
+                        result.get("latency_ms"),
+                        int(time.time()),
+                        digest,
+                        configured["id"],
+                    ),
+                )
+            db.execute("DELETE FROM group_confirmations WHERE group_id=?", (identifier,))
+            db.execute("DELETE FROM group_devices WHERE group_id=?", (identifier,))
+            db.execute("DELETE FROM subscription_groups WHERE id=?", (identifier,))
+            db.execute(
+                """UPDATE exit_jobs SET state='SUCCEEDED',stage='COMPLETE',finished_at=?
+                WHERE id=?""",
+                (int(time.time()), job_id),
+            )
+            audit(
+                db,
+                actor,
+                "group.deleted",
+                json.dumps({"group_id": identifier, "name": group["name"]}, ensure_ascii=False),
+            )
+    except Exception as exc:
+        error = str(exc) if isinstance(exc, (GatewayError, ValueError)) else "删除配置异常。"
+        with connect(settings.database_path) as db:
+            db.execute(
+                "UPDATE exit_jobs SET state='FAILED',error=?,finished_at=? WHERE id=?",
+                (error, int(time.time()), job_id),
+            )
+            audit(db, actor, "group.delete.failed", f"group_id={identifier}")
+        raise ValueError(f"删除失败，原订阅继续保留：{error}") from None
+    for reference in references:
+        store.delete(reference)
 
 
 def snapshot(settings):

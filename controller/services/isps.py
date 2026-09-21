@@ -179,6 +179,37 @@ def rename(settings, isp_id, name, actor):
         raise ValueError("该 ISP 名称已存在。") from None
 
 
+def delete(settings, isp_id, actor):
+    store = SecretStore(settings.secret_directory)
+    with connect(settings.database_path) as db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute(
+            "SELECT id,name,secret_ref FROM isp_exits WHERE id=?", (isp_id,)
+        ).fetchone()
+        if not row:
+            raise ValueError("未找到 ISP。")
+        bound = db.execute(
+            "SELECT name FROM exit_groups WHERE isp_id=? ORDER BY id LIMIT 1", (isp_id,)
+        ).fetchone()
+        if bound:
+            raise ValueError(f"该固定出口仍被线路“{bound['name']}”使用，不能删除。")
+        if db.execute(
+            "SELECT 1 FROM isp_jobs WHERE isp_id=? AND state IN ('QUEUED','RUNNING')", (isp_id,)
+        ).fetchone():
+            raise ValueError("该固定出口正在检测，请稍后再删除。")
+        reference = row["secret_ref"]
+        db.execute("DELETE FROM isp_checks WHERE isp_id=?", (isp_id,))
+        db.execute("DELETE FROM isp_jobs WHERE isp_id=?", (isp_id,))
+        db.execute("DELETE FROM isp_exits WHERE id=?", (isp_id,))
+        audit(
+            db,
+            actor,
+            "isp.deleted",
+            json.dumps({"isp_id": isp_id, "name": row["name"]}, ensure_ascii=False),
+        )
+    store.delete(reference)
+
+
 def update_connection(settings, isp_id, data, actor):
     store = SecretStore(settings.secret_directory)
     with connect(settings.database_path) as db:
