@@ -206,9 +206,7 @@ def desired(settings, job, excluded_clients=()):
             target_ready = not identity_changed
         else:
             expired = bool(row["expires_on"] and date.fromisoformat(row["expires_on"]) < today)
-            identity_changed = bool(
-                row["isp_current"] and row["isp_current"] != expected_ip
-            )
+            identity_changed = bool(row["isp_current"] and row["isp_current"] != expected_ip)
             target_ready = bool(
                 row["isp_status"] == "HEALTHY"
                 and row["isp_current"] == expected_ip
@@ -227,15 +225,15 @@ def desired(settings, job, excluded_clients=()):
         )
         probe = store.get(row["secret_ref"])
         configured = {
-                "id": row["id"],
-                "exit_type": row["exit_type"],
-                "enabled": bool(enabled),
-                "expected_ip": expected_ip,
-                "expires_on": None if is_direct else row["expires_on"],
-                "probe_username": probe["username"],
-                "probe_password": probe["password"],
-                "clients": [],
-            }
+            "id": row["id"],
+            "exit_type": row["exit_type"],
+            "enabled": bool(enabled),
+            "expected_ip": expected_ip,
+            "expires_on": None if is_direct else row["expires_on"],
+            "probe_username": probe["username"],
+            "probe_password": probe["password"],
+            "clients": [],
+        }
         for client in clients:
             if client["exit_id"] != row["id"] or client["id"] in excluded_clients:
                 continue

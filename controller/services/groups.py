@@ -64,8 +64,10 @@ def ai_selection(db, data, primary, current=None):
         ai_exit_id = int(raw_exit)
     except ValueError:
         raise ValueError("请选择有效的 AI 专用出口。") from None
-    if not providers or len(providers) != len(set(providers)) or any(
-        provider not in AI_PROVIDERS for provider in providers
+    if (
+        not providers
+        or len(providers) != len(set(providers))
+        or any(provider not in AI_PROVIDERS for provider in providers)
     ):
         raise ValueError("请选择至少一个有效的 AI 提供商。")
     ai_exit = available_exit(db, ai_exit_id)
@@ -206,9 +208,10 @@ def update(settings, identifier, data, actor):
             members = resolve_members(db, fields, actor, identifier)
             primary = available_exit(db, group["exit_id"])
             ai_exit_id, ai_providers = ai_selection(db, data, primary, group)
-            ai_changed = group["ai_exit_id"] != ai_exit_id or json.loads(
-                group["ai_providers"]
-            ) != ai_providers
+            ai_changed = (
+                group["ai_exit_id"] != ai_exit_id
+                or json.loads(group["ai_providers"]) != ai_providers
+            )
             db.execute(
                 """UPDATE subscription_groups SET name=?,ai_exit_id=?,ai_providers=?,
                 state=CASE WHEN ai_exit_id IS ? AND ai_providers=? THEN state ELSE 'PENDING' END

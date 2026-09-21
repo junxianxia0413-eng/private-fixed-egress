@@ -223,9 +223,7 @@ def test_direct_renderer_requires_explicit_mark_and_retains_default_reject():
         }
     ]
     config, firewall = render(topology, 995)
-    assert config["outbounds"] == [
-        {"type": "direct", "tag": "direct-7", "routing_mark": 32007}
-    ]
+    assert config["outbounds"] == [{"type": "direct", "tag": "direct-7", "routing_mark": 32007}]
     assert "meta skuid 995 meta mark 32007 accept" in firewall
     assert config["route"]["rules"][-1] == {"action": "reject"}
     assert "ip daddr != 127.0.0.0/8 reject" in firewall

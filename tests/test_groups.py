@@ -154,9 +154,7 @@ def test_group_ai_exit_is_optional_and_reaches_gateway_topology(
 
 def test_group_rejects_ai_providers_without_ai_exit(settings, subscription_data):
     with pytest.raises(ValueError, match="AI 专用出口"):
-        groups.register(
-            settings, {**subscription_data, "ai_provider": ["ANTHROPIC"]}, "admin"
-        )
+        groups.register(settings, {**subscription_data, "ai_provider": ["ANTHROPIC"]}, "admin")
 
 
 def test_change_requires_one_time_confirmation_and_records_old_new_isp(

@@ -205,14 +205,14 @@ def render(groups, proxy_uid):
                 outbound = f"isp-{identifier}"
                 config["outbounds"].append(
                     {
-                    "type": "socks",
-                    "tag": outbound,
-                    "server": group["server"],
-                    "server_port": group["port"],
-                    "version": "5",
-                    "username": group["username"],
-                    "password": group["password"],
-                    "network": "tcp",
+                        "type": "socks",
+                        "tag": outbound,
+                        "server": group["server"],
+                        "server_port": group["port"],
+                        "version": "5",
+                        "username": group["username"],
+                        "password": group["password"],
+                        "network": "tcp",
                     }
                 )
                 allowed.add((group["server"], group["port"]))
@@ -233,11 +233,7 @@ def render(groups, proxy_uid):
         client = clients[0] if clients else None
         if client and client.get("ai_exit_id") is not None:
             domains = sorted(
-                {
-                    domain
-                    for provider in client["ai_providers"]
-                    for domain in AI_DOMAINS[provider]
-                }
+                {domain for provider in client["ai_providers"] for domain in AI_DOMAINS[provider]}
             )
             config["route"]["rules"].append({"inbound": inbound_tags, "action": "sniff"})
             ai_exit_id = client["ai_exit_id"]
