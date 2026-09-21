@@ -133,9 +133,17 @@ def _record(settings, token):
     with connect(settings.database_path) as db:
         row = db.execute(
             """SELECT s.id,s.name,s.state,s.client_ref,s.exit_id,s.deployed_exit_id,
-            g.host,i.status AS isp_status,i.tested_at,i.expected_exit_ip,i.current_exit_ip
+            g.host,e.exit_type,
+            CASE WHEN e.exit_type='GATEWAY_DIRECT' THEN e.status ELSE i.status END
+                AS egress_status,
+            CASE WHEN e.exit_type='GATEWAY_DIRECT' THEN e.checked_at ELSE i.tested_at END
+                AS tested_at,
+            CASE WHEN e.exit_type='GATEWAY_DIRECT'
+                THEN e.direct_expected_ip ELSE i.expected_exit_ip END AS expected_exit_ip,
+            CASE WHEN e.exit_type='GATEWAY_DIRECT'
+                THEN e.current_exit_ip ELSE i.current_exit_ip END AS current_exit_ip
             FROM subscription_groups s JOIN exit_groups e ON s.exit_id=e.id
-            JOIN gateways g ON e.gateway_id=g.id JOIN isp_exits i ON e.isp_id=i.id
+            JOIN gateways g ON e.gateway_id=g.id LEFT JOIN isp_exits i ON e.isp_id=i.id
             WHERE s.token_hash=?""",
             (hashlib.sha256(token.encode()).hexdigest(),),
         ).fetchone()
@@ -144,7 +152,7 @@ def _record(settings, token):
     if (
         row["state"] != "READY"
         or row["exit_id"] != row["deployed_exit_id"]
-        or row["isp_status"] not in ("HEALTHY", "CHECKING")
+        or row["egress_status"] not in ("HEALTHY", "CHECKING")
         or not row["tested_at"]
         or time.time() - row["tested_at"] > 120
         or row["current_exit_ip"] != row["expected_exit_ip"]

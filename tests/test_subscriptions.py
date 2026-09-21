@@ -1,12 +1,13 @@
 # ruff: noqa: F811
 import base64
 import json
+import time
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import pytest
 import yaml
 
-from controller.services import groups, subscriptions
+from controller.services import exits, groups, subscriptions
 from controller.services.database import connect
 from controller.services.secrets import SecretStore
 from gateways.configuration import client_uuid, render, validate
@@ -107,6 +108,52 @@ def test_one_subscription_url_negotiates_shadowrocket_clash_and_browser(
     explicit = client.get(link + "?format=clash")
     assert yaml.safe_load(explicit.text)["proxies"][0]["name"].endswith("443 稳定通道")
     assert client.get(link + "?format=unknown").status_code == 400
+
+
+def test_gateway_direct_exit_can_serve_the_same_subscription_formats(
+    settings, subscription_data, monkeypatch
+):
+    monkeypatch.setattr(
+        exits,
+        "detect_direct",
+        lambda *_: ("8.8.8.8", 12.0, ["https://one.test", "https://two.test"]),
+    )
+    with connect(settings.database_path) as db:
+        gateway_id = db.execute("SELECT id FROM gateways").fetchone()[0]
+    direct_id = exits.register(
+        settings,
+        {
+            "name": "DIRECT-01",
+            "gateway_id": str(gateway_id),
+            "exit_type": "GATEWAY_DIRECT",
+        },
+        "admin",
+    )
+    with connect(settings.database_path) as db:
+        db.execute(
+            """UPDATE exit_groups SET applied=1,status='HEALTHY',
+            current_exit_ip=direct_expected_ip,checked_at=? WHERE id=?""",
+            (int(time.time()), direct_id),
+        )
+    direct_group = {
+        **subscription_data,
+        "name": "DIRECT-GROUP",
+        "exit_id": str(direct_id),
+    }
+    identifier = groups.register(settings, direct_group, "admin")
+    subscriptions.activate(settings, identifier, "admin")
+    with connect(settings.database_path) as db:
+        db.execute(
+            """UPDATE subscription_groups SET state='READY',deployed_exit_id=exit_id
+            WHERE id=?""",
+            (identifier,),
+        )
+    token = subscriptions.link(settings, identifier).rsplit("/", 1)[1]
+    assert base64.b64decode(subscriptions.payload(settings, token)).decode().startswith("vless://")
+    assert (
+        yaml.safe_load(subscriptions.payload(settings, token, "clash"))["proxies"][0]["type"]
+        == "vless"
+    )
 
 
 def test_subscription_qr_contains_svg_without_putting_link_in_image_url():
