@@ -45,13 +45,30 @@ Phase 0–10 已完成；Wi-Fi/蜂窝切换、IPv6/DNS 和 UDP 游戏按实际�
 
 ## 统一订阅、VPS 直出与 AI 分流（生产验证）
 
-- Windows 完整回归：133 passed / 16 Linux-only skipped；Ruff 与 Git whitespace 检查通过。Debian 候选版本回归、`sing-box check` 和 `nft -c` 也已通过。
+- Windows 完整回归：135 passed / 16 Linux-only skipped；Ruff 与 Git whitespace 检查通过。Debian 候选版本回归、`sing-box check` 和 `nft -c` 也已通过。
 - 同一生产订阅地址已分别以 Shadowrocket、Clash Verge Rev 和浏览器 User-Agent 请求，依次得到 Base64 VLESS、Mihomo YAML 和使用说明页；响应禁止缓存且携带 `Vary: User-Agent, Accept`。
 - 从 MetaCubeX 官方 Release 下载 Mihomo v1.19.31，核对 GitHub API 发布的 SHA-256 后，真实内核成功加载生产订阅 YAML。
 - 生产数据库从 schema 10 升级到 schema 12。原有三条 ISP 线路、三个订阅组、令牌、设备映射和审计记录保持，`foreign_key_check` 无错误。
 - 东京 VPS 直出由两个独立检测站确认并锁定为该服务器公网 IPv4；第四条线路通过完整候选检查、应用和双站出口验证。为避免服务器仅返回不可达 IPv6 DNS 结果，每条直出线路使用带相同路由标记的 IPv4 DNS；默认未匹配出站仍由 nftables 拒绝。
 - 在生产数据的一个订阅上临时启用 Anthropic、OpenAI、Gemini AI 分流：真实网关配置通过 sing-box 检查并应用，AI 域名指向 VPS 直出，普通域名仍指向原 ISP。随后恢复默认设置并再次应用，三个现有订阅均保持 `READY`。
-- 验收期间第一条上游 ISP 曾有一次检测超时；另外两条 ISP 与 VPS 直出保持健康，未被第三方线路故障牵连。下一轮自动复查后该 ISP 恢复，最终四条出口、三个订阅和 Controller、Caddy、Gateway、守卫定时器全部健康。
+- 验收期间第一条上游 ISP 曾在双站并发检测时短暂超时；另外两条 ISP 与 VPS 直出保持健康，未被该线路牵连。探测器现会在并发失败后对两个站点各顺序重试一次，顺序重试仍失败才标记异常；双站 IP 必须一致和禁止隐式直连的规则不变。更新后的现场复查显示三条 ISP、VPS 直出、所有订阅和 Controller、Caddy、Gateway、守卫定时器健康。
+
+## Clash 延迟诊断与 TCP 优化
+
+- 用户截图中的节点单测约 274 ms，但同时开启了只适用于至少两个节点的“链式代理”，左侧组合结果达到 1004 ms；首页仍显示中国电信 IP，说明 Windows 系统代理/TUN 尚未接管该流量。
+- 生产 VPS 诊断时负载约 0.00、可用内存约 519 MB、磁盘使用 34%，Controller、Caddy、Gateway 和守卫均正常，因此不是 CPU、内存或磁盘瓶颈。
+- 东京 VPS 到普通国际 Anycast 目标约 0.5–2.1 ms、无丢包；到一个中国电信测试地址约 244 ms，并出现 30% ICMP 丢包。该结果与客户端约 274 ms 同量级，主要瓶颈位于中国电信与 Vultr 东京之间的跨境路由。
+- Gateway 已持久启用 BBR、FQ、双向 TCP Fast Open、路径 MTU 探测和空闲后拥塞窗口保持。Mihomo 订阅已加入 `tcp-concurrent`、Keepalive、TFO 与 Chrome TLS 指纹，并经生产订阅请求验证。
+- 优化后原有 ISP、VPS 直出、订阅和默认拒绝策略保持；这些参数改善丢包时的连接和吞吐，不承诺改变由物理距离及运营商路由决定的基础 RTT。
+
+## LightNode VPS 迁移（2026-10-04）
+
+- 从旧 Vultr 东京节点 `45.32.20.164` 在线备份 SQLite、全部 secrets、网关事务状态、Caddy/Controller 配置和线上版本 `fb7c22ed3c3d66b0d3eab2bfea14f205ed47822d`。三个归档均在传输前后核对 SHA-256，SQLite `integrity_check` 返回 `ok`；制作归档期间只暂停 Controller 和守卫定时器，数据转发服务保持运行，完成后自动恢复旧服务。
+- 备份恢复到 LightNode 东京 Debian 12 节点 `38.60.212.135`，保留管理员、设备、三条固定 ISP、四条出口线路、四个订阅组、订阅令牌、审计记录和网关管理密钥。Gateway 记录及 Ed25519 主机密钥已更新；VPS 直出身份从旧地址显式迁移到新地址，固定 ISP 身份未改变。
+- Caddy 2.11.7 已为新公网 IPv4 签发短期可信证书，443 与 8443 健康检查通过。外部连续 10 次 HTTPS 请求全部成功；连接复用后的完整健康请求约 81–89 ms。该数字只证明电脑到新控制入口的路径，不能替代手机网络或游戏服务器 RTT。
+- 使用真实 Windows sing-box 客户端依次穿透四个 VLESS + WebSocket + TLS 订阅组，实际出口分别为 `43.246.197.96`、`103.11.120.244`、`43.246.197.154` 和 `38.60.212.135`。前三个固定 ISP 出口保持，第四个 VPS 直出正确变化。
+- 同一订阅地址分别返回 Shadowrocket Base64、Clash/Mihomo YAML 和浏览器说明页；官方 Mihomo v1.19.32 按发布 SHA-256 校验后成功加载 YAML。网关默认出口拒绝、防火墙、Controller、Caddy、Gateway 和守卫定时器均为 active。
+- root 密码登录已关闭，下载的恢复密钥在硬化后重新登录成功。旧 VPS 暂时保留作为回退点，待新订阅在实际手机和 Clash Verge 中确认后再单独下线。
 
 ## Phase 2 开发验证
 
@@ -148,3 +165,4 @@ Windows Python 3.14 为 111 passed / 15 Linux-only skipped；Debian Python 3.11 
 固定出口和订阅组卡片增加右下角六点菜单及浏览器二次确认。仍被出口线路引用的固定出口会拒绝删除。删除已部署的订阅组时，系统在同一个 Gateway 配置事务中先移除客户端，远程验证并确认后再删除数据库记录和秘密；远程失败则回滚并保留原订阅。删除未启用的订阅组不会删除设备库记录。
 
 Windows 为 122 passed / 16 skipped，Debian 为 138 passed。生产浏览器验证了两个六点菜单、确认提示和取消后数据不变。现场已有三条订阅，均为 READY，并分别完成 10 次固定出口 HTTPS 请求，共 30/30 成功。
+

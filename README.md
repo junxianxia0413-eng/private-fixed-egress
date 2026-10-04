@@ -57,10 +57,11 @@ Debian 12 部署步骤见 [deploy/README.md](deploy/README.md)。
 开发任务见 [GitHub Issues](https://github.com/junxianxia0413-eng/private-fixed-egress/issues)。
 当前连接没有 Milestone 创建能力，暂用 Phase 0–10 共 11 个 Issue 跟踪。
 
-当前状态：Phase 0–10 已完成并部署到真实 Debian 12 VPS。统一订阅同时支持 Shadowrocket 与 Clash Verge Rev；出口线路可显式选择固定 ISP 或 VPS 自带公网 IP；订阅组可选同网关 AI 专用出口。所有出口仍经过双站身份验证，未匹配流量默认拒绝。
+当前状态：Phase 0–10 已完成，并于 2026-10-04 从 Vultr 东京迁移到 LightNode 东京 Debian 12 VPS（`38.60.212.135`）。统一订阅同时支持 Shadowrocket 与 Clash Verge Rev；出口线路可显式选择固定 ISP 或 VPS 自带公网 IP；订阅组可选同网关 AI 专用出口。所有出口仍经过双站身份验证，未匹配流量默认拒绝。
 
 最简单的使用流程是：登录控制台 → 创建并验证出口线路 → 打开“订阅组”登记设备、选择主出口和可选 AI 出口 → 生成一个链接或二维码 → 在 Shadowrocket 或 Clash Verge Rev 导入。同一个地址会按客户端返回正确格式；浏览器打开则显示说明页。
 
 “网络监控”页面会分别显示服务器到 ISP 代理入口的 TCP 延迟、抖动、ICMP 信息、服务通过率和资源使用率。它不等于手机到服务器的实际延迟，也不把网站完整响应时间冒充线路延迟；手机体验仍需用真实 Wi-Fi/蜂窝网络验收。
 
 服务器操作见 [gateways/README.md](gateways/README.md)，测试证据与未完成的真实手机验收见 [VALIDATION.md](VALIDATION.md)。目前仍保持开放的验收项是两台 iPhone 实机导入、同出口、IPv6/DNS 和手机侧延迟记录。
+
