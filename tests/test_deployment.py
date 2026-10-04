@@ -6,7 +6,7 @@ from scripts.deployment import render_caddy, target_kind
 @pytest.mark.parametrize("target", ["network.example.com", "jp-01.example.com"])
 def test_dns_config_remains_supported(target):
     assert target_kind(target) == "dns"
-    assert f"{target} {{" in render_caddy(target)
+    assert f"{target}, {target}:8443 {{" in render_caddy(target)
     assert "profile shortlived" not in render_caddy(target)
     assert "path_regexp pfem_ws" in render_caddy(target)
     assert "127.0.0.1:{re.pfem_ws.1}" in render_caddy(target)
@@ -14,11 +14,15 @@ def test_dns_config_remains_supported(target):
 
 def test_ip_uses_public_acme_with_shortlived_profile():
     rendered = render_caddy("8.8.8.8")
-    assert "https://8.8.8.8 {" in rendered
+    assert "https://8.8.8.8, https://8.8.8.8:8443 {" in rendered
     assert "profile shortlived" in rendered
     assert "https://acme-v02.api.letsencrypt.org/directory" in rendered
     assert "tls internal" not in rendered
     assert "reverse_proxy 127.0.0.1:8000" in rendered
+
+
+def test_dns_target_also_serves_the_alternate_tls_port():
+    assert "example.com, example.com:8443 {" in render_caddy("example.com")
 
 
 @pytest.mark.parametrize(

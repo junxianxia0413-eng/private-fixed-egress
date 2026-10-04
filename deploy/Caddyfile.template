@@ -1,5 +1,5 @@
 # Managed by Private Fixed-Egress Network Manager
-__DOMAIN__ {
+__DOMAIN__, __DOMAIN__:8443 {
     encode zstd gzip
     route {
         @pfem_ws path_regexp pfem_ws ^/pfem-ws/(13[0-9]{3}|14000)$

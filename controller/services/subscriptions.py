@@ -162,7 +162,7 @@ def _record(settings, token):
     return dict(row), password
 
 
-def _node(row, password):
+def _node(row, password, port, label):
     query = urlencode(
         {
             "encryption": "none",
@@ -175,18 +175,23 @@ def _node(row, password):
         }
     )
     node = (
-        f"vless://{client_uuid(password)}@{row['host']}:443?{query}#"
-        f"{quote(row['name'] + ' · 443 稳定通道', safe='')}"
+        f"vless://{client_uuid(password)}@{row['host']}:{port}?{query}#"
+        f"{quote(row['name'] + ' · ' + label, safe='')}"
     )
     return node
 
 
 def shadowrocket_payload(row, password):
-    return base64.b64encode((_node(row, password) + "\n").encode()).decode()
+    nodes = (
+        _node(row, password, 443, "443 主入口"),
+        _node(row, password, 8443, "8443 备用入口"),
+    )
+    return base64.b64encode(("\n".join(nodes) + "\n").encode()).decode()
 
 
 def clash_payload(row, password):
-    name = row["name"] + " · 443 稳定通道"
+    primary = row["name"] + " · 443 主入口"
+    alternate = row["name"] + " · 8443 备用入口"
     proxy_group = row["name"] + " · 固定出口"
     document = {
         "mixed-port": 7890,
@@ -200,7 +205,7 @@ def clash_payload(row, password):
         "keep-alive-idle": 30,
         "proxies": [
             {
-                "name": name,
+                "name": primary,
                 "type": "vless",
                 "server": row["host"],
                 "port": 443,
@@ -210,15 +215,40 @@ def clash_payload(row, password):
                 "servername": row["host"],
                 "skip-cert-verify": False,
                 "client-fingerprint": "chrome",
-                "tfo": True,
                 "udp": False,
                 "ws-opts": {
                     "path": tls_path(row["id"]),
                     "headers": {"Host": row["host"]},
                 },
+            },
+            {
+                "name": alternate,
+                "type": "vless",
+                "server": row["host"],
+                "port": 8443,
+                "uuid": client_uuid(password),
+                "network": "ws",
+                "tls": True,
+                "servername": row["host"],
+                "skip-cert-verify": False,
+                "client-fingerprint": "chrome",
+                "udp": False,
+                "ws-opts": {
+                    "path": tls_path(row["id"]),
+                    "headers": {"Host": row["host"]},
+                },
+            },
+        ],
+        "proxy-groups": [
+            {
+                "name": proxy_group,
+                "type": "fallback",
+                "proxies": [primary, alternate],
+                "url": "https://www.gstatic.com/generate_204",
+                "interval": 120,
+                "lazy": False,
             }
         ],
-        "proxy-groups": [{"name": proxy_group, "type": "select", "proxies": [name]}],
         "rules": [f"MATCH,{proxy_group}"],
     }
     return yaml.safe_dump(document, allow_unicode=True, sort_keys=False)

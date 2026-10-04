@@ -8,7 +8,7 @@
 1. 一台已有 Debian 12 Controller VPS，建议 1 CPU / 1 GB / 20 GB。
 2. 可用公网 IPv4，或域名的 A/AAAA 记录指向该 VPS；使用 IPv4 模式不需要域名。
 3. SSH 地址、端口、用户、可信 host key 指纹，以及本地 SSH 私钥路径。
-4. 入站 TCP 80/443 用于 HTTPS；SSH 仅向管理来源开放。
+4. 入站 TCP 80/443/8443 用于 HTTPS 与备用入口；SSH 仅向管理来源开放。
 
 不需要提前购买更多节点。Gateway、SOCKS ISP 和两台 iPhone 分别用于后续阶段验收。
 不要将任何凭据填入 GitHub Issue 或 README。
@@ -27,17 +27,17 @@ sudo bash deploy/install_controller.sh network.example.com
 
 把示例域名换成已指向 VPS 的真实域名。脚本会交互式要求管理员名称和密码。
 也可以把参数直接替换成你控制的公网 IPv4。IPv4 模式安装 Caddy 官方稳定版（至少 2.11），显式使用 Let's Encrypt 的 shortlived IP 证书，Caddy 自动续期。
-不需要购买域名或向手机导入自签名根证书；证书签发需要公网 80/443 可达。
+不需要购买域名或向手机导入自签名根证书；证书签发需要公网 80/443 可达，备用入口需要 8443 可达。
 IP 模式当前只支持公网 IPv4，私有/保留 IP 和 IPv6 会明确拒绝。
 
 自动部署可设置 `PFEM_ADMIN_PASSWORD_FILE` 指向服务器上权限受限的密码文件，用户名由 `PFEM_ADMIN_USERNAME` 指定（默认 admin）。
 安装器会临时复制为 pfem 用户的 0600 文件，初始化后删除临时副本。密码不会放进进程参数或日志；操作者负责删除源密码文件。
 重复安装相同提交保留管理员和数据库。若检测到其他版本或已有非本项目 Caddy 配置，会停止并要求先审查升级/站点合并。
-脚本不修改 SSH 或主机防火墙，避免意外切断管理连接；云防火墙需允许 80/443 和受限来源的 SSH。
+脚本不修改 SSH 或主机防火墙，避免意外切断管理连接；云防火墙需允许 80/443/8443 和受限来源的 SSH。
 不要开放 8000；应用只监听 127.0.0.1。
 
-若 VPS 已启用 UFW 且仅放行 SSH，在核实规则后添加 `ufw allow 80/tcp` 和 `ufw allow 443/tcp`，保留已有 SSH 规则。
-不要关闭整个防火墙或清空规则。云平台防火墙若启用也需放行这两个端口。
+若 VPS 已启用 UFW 且仅放行 SSH，在核实规则后添加 `ufw allow 80/tcp`、`ufw allow 443/tcp` 和 `ufw allow 8443/tcp`，保留已有 SSH 规则。
+不要关闭整个防火墙或清空规则。云平台防火墙若启用也需放行这些端口。
 证书签发阶段可能暂时出现 TLS 握手错误，安装器会在有界时间内重试；持续超时应先排查防火墙。
 
 脚本验证顺序：依赖完整性 → 管理员/数据库 → systemd → loopback 健康检查 → Caddy 校验 → 公共 HTTPS。

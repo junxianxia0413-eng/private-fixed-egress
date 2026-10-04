@@ -1,5 +1,5 @@
 # Managed by Private Fixed-Egress Network Manager
-https://__DOMAIN__ {
+https://__DOMAIN__, https://__DOMAIN__:8443 {
     tls {
         issuer acme {
             dir https://acme-v02.api.letsencrypt.org/directory
