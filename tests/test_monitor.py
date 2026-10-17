@@ -102,6 +102,25 @@ def test_one_failed_guard_route_does_not_mark_other_routes_down(settings, group_
         assert states == {first: "CRITICAL", second: "HEALTHY"}
 
 
+def test_verified_route_overrides_a_separate_isp_probe_timeout(settings, group_data):
+    identifier = exits.register(settings, group_data, "admin")
+    with connect(settings.database_path) as db:
+        db.execute("UPDATE exit_groups SET applied=1")
+        db.execute("UPDATE isp_exits SET status='CRITICAL',current_exit_ip=NULL")
+        gateway = dict(db.execute("SELECT * FROM gateways").fetchone())
+        now = int(time.time())
+        report = {"healthy": True, "guard": {
+            "healthy": True, "checked_at": now,
+            "groups": [{"id": identifier, "healthy": True, "ingress_open": True}],
+            "results": [{"id": identifier, "exit_ip": "1.1.1.1", "latency_ms": 40}],
+        }}
+        monitor.record_health(db, gateway, report, now)
+        assert db.execute("SELECT status FROM exit_groups").fetchone()[0] == "HEALTHY"
+        report["guard"]["groups"][0]["healthy"] = False
+        monitor.record_health(db, gateway, report, now)
+        assert db.execute("SELECT status FROM exit_groups").fetchone()[0] == "CRITICAL"
+
+
 def test_monitor_auth_csrf_and_empty_quality(client, group_data):
     assert client.get("/network").status_code == 303
     assert client.get("/api/network").status_code == 401

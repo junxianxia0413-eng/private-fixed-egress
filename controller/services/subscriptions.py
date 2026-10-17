@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import io
+import json
 import re
 import secrets
 import sqlite3
@@ -127,13 +128,36 @@ def rotate(settings, identifier, actor):
     store.delete(row["token_ref"])
 
 
+def _guard_verified(row):
+    """A fresh successful check of the actual route is valid identity evidence too."""
+    try:
+        report = json.loads(row["health_json"] or "{}")
+        guard = report["guard"]
+        checked_at = guard["checked_at"]
+        if (
+            report.get("healthy") is not True
+            or type(checked_at) not in (int, float)
+            or not -5 <= time.time() - checked_at <= 120
+        ):
+            return False
+        state = next(g for g in guard["groups"] if g["id"] == row["route_id"])
+        return bool(
+            state.get("healthy") is True
+            and state.get("ingress_open") is True
+            and row["expected_exit_ip"]
+            and state.get("result", {}).get("exit_ip") == row["expected_exit_ip"]
+        )
+    except (ValueError, KeyError, TypeError, AttributeError, StopIteration):
+        return False
+
+
 def _record(settings, token):
     if not re.fullmatch("[a-zA-Z0-9_-]{43}", token):
         return None
     with connect(settings.database_path) as db:
         row = db.execute(
             """SELECT s.id,s.name,s.state,s.client_ref,s.exit_id,s.deployed_exit_id,
-            g.host,e.exit_type,
+            g.host,g.health_json,e.id AS route_id,e.exit_type,
             CASE WHEN e.exit_type='GATEWAY_DIRECT' THEN e.status ELSE i.status END
                 AS egress_status,
             CASE WHEN e.exit_type='GATEWAY_DIRECT' THEN e.checked_at ELSE i.tested_at END
@@ -149,13 +173,20 @@ def _record(settings, token):
         ).fetchone()
     if not row:
         return None
+    standalone_verified = (
+        row["egress_status"] in ("HEALTHY", "CHECKING")
+        and row["tested_at"]
+        and -5 <= time.time() - row["tested_at"] <= 120
+        and row["current_exit_ip"] == row["expected_exit_ip"]
+    )
+    mismatch = bool(
+        row["current_exit_ip"] and row["current_exit_ip"] != row["expected_exit_ip"]
+    )
     if (
         row["state"] != "READY"
         or row["exit_id"] != row["deployed_exit_id"]
-        or row["egress_status"] not in ("HEALTHY", "CHECKING")
-        or not row["tested_at"]
-        or time.time() - row["tested_at"] > 120
-        or row["current_exit_ip"] != row["expected_exit_ip"]
+        or mismatch
+        or not (standalone_verified or _guard_verified(row))
     ):
         raise ValueError("出口配置尚未就绪或检查异常，请稍后重试。")
     password = SecretStore(settings.secret_directory).get(row["client_ref"])["password"]

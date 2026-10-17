@@ -165,7 +165,9 @@ def record_health(db, gateway, report, now):
             )
             and result.get("exit_ip") == row["expected_exit_ip"]
             and (
-                row["exit_type"] == "GATEWAY_DIRECT" or row["isp_status"] in ("HEALTHY", "CHECKING")
+                row["exit_type"] == "GATEWAY_DIRECT"
+                or row["isp_status"] in ("HEALTHY", "CHECKING")
+                or group_states.get(row["id"], {}).get("healthy") is True
             )
         )
         latency = result.get("latency_ms")

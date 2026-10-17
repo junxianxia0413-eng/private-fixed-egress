@@ -18,6 +18,44 @@ from tests.test_groups import subscription_data  # noqa: F401
 from tests.test_isps import isp_data  # noqa: F401
 
 
+def test_recent_actual_route_check_can_serve_subscription_during_isp_probe_timeout(
+    settings, subscription_data,
+):
+    identifier = groups.register(settings, subscription_data, "admin")
+    subscriptions.activate(settings, identifier, "admin")
+    token = subscriptions.link(settings, identifier).rsplit("/", 1)[1]
+    now = int(time.time())
+    with connect(settings.database_path) as db:
+        db.execute("UPDATE subscription_groups SET state='READY',deployed_exit_id=exit_id")
+        route_id = db.execute("SELECT exit_id FROM subscription_groups").fetchone()[0]
+        db.execute("UPDATE isp_exits SET status='CRITICAL',current_exit_ip=NULL")
+        report = {"healthy": True, "guard": {
+            "checked_at": now,
+            "groups": [{"id": route_id, "healthy": True, "ingress_open": True,
+                        "result": {"exit_ip": "1.1.1.1"}}],
+        }}
+        db.execute("UPDATE gateways SET health_json=?", (json.dumps(report),))
+    assert subscriptions.payload(settings, token)
+    for change in ("stale", "mismatch", "soft_failure", "closed", "invalid", "future"):
+        value = json.loads(json.dumps(report))
+        if change == "stale":
+            value["guard"]["checked_at"] = now - 121
+        elif change == "future":
+            value["guard"]["checked_at"] = now + 1000
+        elif change == "mismatch":
+            value["guard"]["groups"][0]["result"]["exit_ip"] = "8.8.4.4"
+        elif change == "soft_failure":
+            value["guard"]["groups"][0]["healthy"] = False
+        elif change == "closed":
+            value["guard"]["groups"][0]["ingress_open"] = False
+        else:
+            value = []
+        with connect(settings.database_path) as db:
+            db.execute("UPDATE gateways SET health_json=?", (json.dumps(value),))
+        with pytest.raises(ValueError):
+            subscriptions.payload(settings, token)
+
+
 def test_subscription_has_one_gateway_node_and_rotated_token_is_revoked(
     settings, subscription_data, isp_data
 ):
