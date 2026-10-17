@@ -141,6 +141,11 @@ def record_health(db, gateway, report, now):
         for r in guard.get("results") or []
         if isinstance(r, dict) and type(r.get("id")) is int
     }
+    group_states = {
+        r["id"]: r
+        for r in guard.get("groups") or []
+        if isinstance(r, dict) and type(r.get("id")) is int
+    }
     rows = db.execute(
         """SELECT e.id,e.exit_type,
         COALESCE(i.expected_exit_ip,e.direct_expected_ip) AS expected_exit_ip,
@@ -153,7 +158,11 @@ def record_health(db, gateway, report, now):
         healthy = (
             good
             and fresh
-            and guard.get("healthy") is True
+            and (
+                group_states[row["id"]].get("ingress_open") is True
+                if row["id"] in group_states
+                else guard.get("healthy") is True
+            )
             and result.get("exit_ip") == row["expected_exit_ip"]
             and (
                 row["exit_type"] == "GATEWAY_DIRECT" or row["isp_status"] in ("HEALTHY", "CHECKING")

@@ -77,6 +77,31 @@ def test_icmp_filtered_is_unknown_not_fake_packet_loss(monkeypatch):
     assert not monitor.numeric(float("nan")) and not monitor.numeric(True)
 
 
+def test_one_failed_guard_route_does_not_mark_other_routes_down(settings, group_data):
+    first = exits.register(settings, group_data, "admin")
+    second = exits.register(settings, {**group_data, "name": "EXIT-02"}, "admin")
+    with connect(settings.database_path) as db:
+        db.execute("UPDATE exit_groups SET applied=1")
+        gateway = dict(db.execute("SELECT * FROM gateways").fetchone())
+        now = int(time.time())
+        monitor.record_health(db, gateway, {
+            "healthy": True,
+            "guard": {
+                "healthy": False, "checked_at": now,
+                "groups": [
+                    {"id": first, "ingress_open": False},
+                    {"id": second, "ingress_open": True},
+                ],
+                "results": [
+                    {"id": first, "exit_ip": "1.1.1.1", "latency_ms": 10},
+                    {"id": second, "exit_ip": "1.1.1.1", "latency_ms": 10},
+                ],
+            },
+        }, now)
+        states = dict(db.execute("SELECT id,status FROM exit_groups"))
+        assert states == {first: "CRITICAL", second: "HEALTHY"}
+
+
 def test_monitor_auth_csrf_and_empty_quality(client, group_data):
     assert client.get("/network").status_code == 303
     assert client.get("/api/network").status_code == 401

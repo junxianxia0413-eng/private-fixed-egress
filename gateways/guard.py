@@ -3,6 +3,7 @@
 import fcntl
 import json
 import subprocess
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
@@ -12,6 +13,31 @@ from gateways.transactions import BASE, MANIFEST, PENDING, ApplyError, verify, w
 
 LOCK = Path("/run/lock/pfem-gateway.lock")
 EVENTS = BASE / "guard-events.jsonl"
+PROBE_BUDGET = 25
+
+
+def bounded_check(group, deadline):
+    """A stalled DNS/SOCKS/TLS request must not stall the gateway heartbeat."""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return {"error": "EXIT_CHECK_TIMEOUT", "hard": False, "attempted": False}
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "gateways.guard", "check"],
+            input=json.dumps(group).encode(),
+            capture_output=True,
+            timeout=remaining,
+        )
+        if result.returncode:
+            raise ValueError("Probe worker failed")
+        outcome = json.loads(result.stdout)
+        if not isinstance(outcome, dict) or not ("result" in outcome or "error" in outcome):
+            raise ValueError("Invalid probe report")
+        return outcome
+    except subprocess.TimeoutExpired:
+        return {"error": "EXIT_CHECK_TIMEOUT", "hard": False}
+    except Exception:
+        return {"error": "EXIT_UNAVAILABLE", "hard": False}
 
 
 def lease(ports, tls_ports):
@@ -131,6 +157,8 @@ def record_event(previous, state):
 
 
 def run():
+    # Snapshot only under the configuration lock. Network checks run outside it so
+    # an unavailable detection site cannot block apply/rollback/restart operations.
     with open(LOCK, "w") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -142,8 +170,23 @@ def run():
         groups = [group for group in manifest["groups"] if group["enabled"]]
         previous = load_state()
         old_groups = previous_groups(previous, manifest)
-        with ThreadPoolExecutor(max_workers=min(4, max(1, len(groups)))) as pool:
-            outcomes = list(pool.map(check, groups))
+    # Older/never-attempted routes go first if there are more routes than workers.
+    groups.sort(key=lambda group: old_groups.get(group["id"], {}).get("attempted_at", 0))
+    deadline = time.monotonic() + PROBE_BUDGET
+    with ThreadPoolExecutor(max_workers=min(4, max(1, len(groups)))) as pool:
+        outcomes = list(pool.map(lambda group: bounded_check(group, deadline), groups))
+    with open(LOCK, "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return
+        if PENDING.exists() or not MANIFEST.exists():
+            return
+        if json.loads(MANIFEST.read_text()) != manifest:
+            # Never authorize ports or overwrite guard state using an old config.
+            return
+        previous = load_state()
+        old_groups = previous_groups(previous, manifest)
         now = int(time.time())
         states = []
         open_ports = []
@@ -177,6 +220,9 @@ def run():
                 }
                 if grace and isinstance(prior.get("result"), dict):
                     row["result"] = prior["result"]
+            row["attempted_at"] = (
+                now if outcome.get("attempted", True) else prior.get("attempted_at", 0)
+            )
             if row["ingress_open"]:
                 open_ports.extend(20000 + client["id"] for client in group.get("clients", []))
                 open_tls_ports.extend(13000 + client["id"] for client in group.get("clients", []))
@@ -212,4 +258,13 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    if sys.argv[1:] == ["check"]:
+        # Credentials enter over stdin, never process arguments or logs.
+        raw = sys.stdin.buffer.read(131073)
+        if len(raw) > 131072:
+            raise SystemExit(64)
+        print(json.dumps(check(json.loads(raw))))
+    elif not sys.argv[1:]:
+        run()
+    else:
+        raise SystemExit(64)
