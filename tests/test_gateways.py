@@ -257,6 +257,47 @@ def test_unknown_remote_actions_never_execute(monkeypatch):
     execute.assert_not_called()
 
 
+def test_slow_configuration_and_isp_jobs_do_not_block_health_checks(settings, monkeypatch):
+    import threading
+
+    from controller.services import gateways, isps, monitor
+
+    blocked_configuration = threading.Event()
+    blocked_isp = threading.Event()
+    health_checked = threading.Event()
+    release = threading.Event()
+
+    def configuration(_):
+        blocked_configuration.set()
+        release.wait(5)
+        return False
+
+    def isp(_):
+        blocked_isp.set()
+        release.wait(5)
+        return False
+
+    def monitoring(_, kind=None):
+        if kind == "health":
+            assert blocked_configuration.wait(2) and blocked_isp.wait(2)
+            health_checked.set()
+        return False
+
+    monkeypatch.setattr(gateways.GatewayWorker, "once", configuration)
+    monkeypatch.setattr(isps, "run_next", isp)
+    monkeypatch.setattr(isps, "schedule_due", lambda _: None)
+    monkeypatch.setattr(monitor, "schedule_due", lambda _: None)
+    monkeypatch.setattr(monitor, "run_next", monitoring)
+    worker = GatewayWorker(settings)
+    worker.start()
+    try:
+        assert health_checked.wait(3)
+    finally:
+        release.set()
+        worker.close()
+    assert all(not thread.is_alive() for thread in worker.threads)
+
+
 def test_unhealthy_core_and_unfinished_ssh_protection_not_healthy(monkeypatch):
     monkeypatch.setattr(deployment, "execute", lambda *a, **k: '{"healthy":false}')
     with pytest.raises(GatewayError, match="未通过"):

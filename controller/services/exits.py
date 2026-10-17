@@ -208,7 +208,7 @@ def desired(settings, job, excluded_clients=()):
             expired = bool(row["expires_on"] and date.fromisoformat(row["expires_on"]) < today)
             identity_changed = bool(row["isp_current"] and row["isp_current"] != expected_ip)
             target_ready = bool(
-                row["isp_status"] == "HEALTHY"
+                row["isp_status"] in ("HEALTHY", "CHECKING")
                 and row["isp_current"] == expected_ip
                 and row["tested_at"]
                 and time.time() - row["tested_at"] <= 300

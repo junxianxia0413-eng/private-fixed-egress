@@ -19,7 +19,8 @@ from tests.test_isps import isp_data  # noqa: F401
 
 
 def test_recent_actual_route_check_can_serve_subscription_during_isp_probe_timeout(
-    settings, subscription_data,
+    settings,
+    subscription_data,
 ):
     identifier = groups.register(settings, subscription_data, "admin")
     subscriptions.activate(settings, identifier, "admin")
@@ -29,11 +30,20 @@ def test_recent_actual_route_check_can_serve_subscription_during_isp_probe_timeo
         db.execute("UPDATE subscription_groups SET state='READY',deployed_exit_id=exit_id")
         route_id = db.execute("SELECT exit_id FROM subscription_groups").fetchone()[0]
         db.execute("UPDATE isp_exits SET status='CRITICAL',current_exit_ip=NULL")
-        report = {"healthy": True, "guard": {
-            "checked_at": now,
-            "groups": [{"id": route_id, "healthy": True, "ingress_open": True,
-                        "result": {"exit_ip": "1.1.1.1"}}],
-        }}
+        report = {
+            "healthy": True,
+            "guard": {
+                "checked_at": now,
+                "groups": [
+                    {
+                        "id": route_id,
+                        "healthy": True,
+                        "ingress_open": True,
+                        "result": {"exit_ip": "1.1.1.1"},
+                    }
+                ],
+            },
+        }
         db.execute("UPDATE gateways SET health_json=?", (json.dumps(report),))
     assert subscriptions.payload(settings, token)
     for change in ("stale", "mismatch", "soft_failure", "closed", "invalid", "future"):

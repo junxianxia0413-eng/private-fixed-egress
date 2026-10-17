@@ -142,7 +142,8 @@ def test_slow_worker_is_killed_before_service_timeout(monkeypatch):
     monkeypatch.setattr(guard.subprocess, "run", stalled)
     secret = "TEST-SECRET-NOT-IN-ARGV"
     assert guard.bounded_check({"probe_password": secret}, time.monotonic() + 0.05) == {
-        "error": "EXIT_CHECK_TIMEOUT", "hard": False,
+        "error": "EXIT_CHECK_TIMEOUT",
+        "hard": False,
     }
     args, options = calls[0]
     assert 0 < options["timeout"] <= 0.05
@@ -172,13 +173,20 @@ def test_network_checks_release_lock_and_discard_old_config(tmp_path, monkeypatc
 
     guard = importlib.import_module("gateways.guard")
     manifest = tmp_path / "manifest.json"
-    manifest.write_text(json.dumps({
-        "transaction": "c" * 32,
-        "groups": [{"id": 1, "enabled": True, "clients": [{"id": 1}]}],
-    }))
+    manifest.write_text(
+        json.dumps(
+            {
+                "transaction": "c" * 32,
+                "groups": [{"id": 1, "enabled": True, "clients": [{"id": 1}]}],
+            }
+        )
+    )
     for key, value in {
-        "BASE": tmp_path, "MANIFEST": manifest, "PENDING": tmp_path / "pending",
-        "LOCK": tmp_path / "lock", "EVENTS": tmp_path / "events",
+        "BASE": tmp_path,
+        "MANIFEST": manifest,
+        "PENDING": tmp_path / "pending",
+        "LOCK": tmp_path / "lock",
+        "EVENTS": tmp_path / "events",
     }.items():
         monkeypatch.setattr(guard, key, value)
     leases = []

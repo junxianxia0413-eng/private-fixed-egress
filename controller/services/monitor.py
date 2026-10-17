@@ -35,9 +35,11 @@ def schedule_due(settings):
                 )
 
 
-def recover(db):
+def recover(db, kind=None):
     db.execute(
-        "UPDATE monitor_jobs SET state='FAILED',error='检查被控制台重启中断' WHERE state='RUNNING'"
+        "UPDATE monitor_jobs SET state='FAILED',error='检查被控制台重启中断' "
+        "WHERE state='RUNNING' AND (? IS NULL OR kind=?)",
+        (kind, kind),
     )
 
 
@@ -123,6 +125,11 @@ def probe(settings, gateway, kind):
 
 
 def record_health(db, gateway, report, now):
+    if db.execute(
+        "SELECT 1 FROM gateway_jobs WHERE gateway_id=? AND state='RUNNING'",
+        (gateway["id"],),
+    ).fetchone():
+        return
     good = report.get("healthy") is True
     db.execute(
         "UPDATE gateways SET status=?,last_error=?,health_json=?,checked_at=? WHERE id=?",
@@ -135,6 +142,12 @@ def record_health(db, gateway, report, now):
         ),
     )
     guard = report.get("guard") or {}
+    if db.execute(
+        "SELECT 1 FROM exit_jobs WHERE gateway_id=? AND state='RUNNING'",
+        (gateway["id"],),
+    ).fetchone():
+        # A check begun before a configuration apply cannot overwrite its state.
+        return
     fresh = numeric(guard.get("checked_at")) and -5 <= now - guard["checked_at"] <= 70
     results = {
         r["id"]: r
@@ -185,11 +198,17 @@ def record_health(db, gateway, report, now):
         )
 
 
-def run_next(settings):
+def run_next(settings, kind=None):
+    if kind not in (None, "health", "quality"):
+        raise ValueError("Invalid monitoring job kind")
     with connect(settings.database_path) as db:
         db.execute("BEGIN IMMEDIATE")
         row = db.execute(
-            "SELECT * FROM monitor_jobs WHERE state='QUEUED' ORDER BY kind,id LIMIT 1"
+            "SELECT * FROM monitor_jobs m WHERE state='QUEUED' "
+            "AND (? IS NULL OR kind=?) AND NOT EXISTS "
+            "(SELECT 1 FROM gateway_jobs g WHERE g.gateway_id=m.gateway_id "
+            "AND g.state='RUNNING') ORDER BY kind,id LIMIT 1",
+            (kind, kind),
         ).fetchone()
         if not row:
             return False

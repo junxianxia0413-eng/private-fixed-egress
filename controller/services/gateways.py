@@ -129,19 +129,30 @@ def snapshot(settings):
 
 
 class GatewayWorker:
-    """One bounded worker per Controller; SQLite retains jobs across process restarts."""
+    """One Controller owner, with independent configuration and monitoring queues."""
 
     def __init__(self, settings):
         self.settings = settings
         self.stop = threading.Event()
         self.thread = threading.Thread(target=self.run, name="gateway-worker", daemon=True)
+        self.threads = [self.thread] + [
+            threading.Thread(
+                target=self.run_checks, args=(kind,), name=f"{kind}-worker", daemon=True
+            )
+            for kind in ("health", "quality", "isp")
+        ]
 
-    def recover(self):
+    def recover(self, lane="all"):
         with connect(self.settings.database_path) as db:
             db.execute("BEGIN IMMEDIATE")
-            isps.recover(db)
-            exits.recover(db)
-            monitor.recover(db)
+            if lane in ("all", "isp"):
+                isps.recover(db)
+            if lane in ("all", "configuration"):
+                exits.recover(db)
+            if lane in ("all", "health", "quality"):
+                monitor.recover(db, None if lane == "all" else lane)
+            if lane not in ("all", "configuration"):
+                return
             for row in db.execute("SELECT * FROM gateway_jobs WHERE state='RUNNING'").fetchall():
                 db.execute(
                     """UPDATE gateways SET status=?,last_error=? WHERE id=?""",
@@ -177,36 +188,51 @@ class GatewayWorker:
             self.lock.close()
             raise RuntimeError("Run one Controller worker per database") from None
         self.recover()
-        self.thread.start()
+        for thread in self.threads:
+            thread.start()
 
     def close(self):
         self.stop.set()
-        self.thread.join(timeout=20)
+        deadline = time.monotonic() + 20
+        for thread in self.threads:
+            thread.join(timeout=max(0, deadline - time.monotonic()))
+        if all(not thread.is_alive() for thread in self.threads):
+            self.lock.close()
 
     def run(self):
         needs_recovery = False
-        try:
-            while not self.stop.is_set():
-                try:
-                    if needs_recovery:
-                        self.recover()
-                        needs_recovery = False
+        while not self.stop.is_set():
+            try:
+                if needs_recovery:
+                    self.recover("configuration")
+                    needs_recovery = False
+                worked = self.once() or exits.run_next(self.settings)
+            except Exception:
+                needs_recovery = True
+                worked = False
+            if not worked:
+                self.stop.wait(0.5)
+
+    def run_checks(self, kind):
+        needs_recovery = False
+        while not self.stop.is_set():
+            try:
+                if needs_recovery:
+                    self.recover(kind)
+                    needs_recovery = False
+                if kind == "isp":
                     isps.schedule_due(self.settings)
-                    monitor.schedule_due(self.settings)
-                    worked = (
-                        self.once()
-                        or exits.run_next(self.settings)
-                        or monitor.run_next(self.settings)
-                        or isps.run_next(self.settings)
-                    )
-                except Exception:
-                    # DB outages must not kill the worker or disclose stored data in logs.
-                    needs_recovery = True
-                    worked = False
-                if not worked:
-                    self.stop.wait(0.5)
-        finally:
-            self.lock.close()
+                    worked = isps.run_next(self.settings)
+                else:
+                    if kind == "health":
+                        monitor.schedule_due(self.settings)
+                    worked = monitor.run_next(self.settings, kind=kind)
+            except Exception:
+                # Recover only this queue, never interrupt another live worker.
+                needs_recovery = True
+                worked = False
+            if not worked:
+                self.stop.wait(0.5)
 
     def once(self):
         with connect(self.settings.database_path) as db:

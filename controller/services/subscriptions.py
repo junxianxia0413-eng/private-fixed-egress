@@ -179,9 +179,7 @@ def _record(settings, token):
         and -5 <= time.time() - row["tested_at"] <= 120
         and row["current_exit_ip"] == row["expected_exit_ip"]
     )
-    mismatch = bool(
-        row["current_exit_ip"] and row["current_exit_ip"] != row["expected_exit_ip"]
-    )
+    mismatch = bool(row["current_exit_ip"] and row["current_exit_ip"] != row["expected_exit_ip"])
     if (
         row["state"] != "READY"
         or row["exit_id"] != row["deployed_exit_id"]
