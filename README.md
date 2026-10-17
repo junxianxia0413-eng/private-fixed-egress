@@ -54,6 +54,8 @@ python -m uvicorn controller.main:app --host 127.0.0.1 --port 8000
 Debian 12 部署步骤见 [deploy/README.md](deploy/README.md)。
 测试证据与未完成验收见 [VALIDATION.md](VALIDATION.md)。
 完整的日常操作说明见 [USER-GUIDE.md](USER-GUIDE.md)。
+
+最新的自动部署、自愈、完整备份、新增资源流程和已知边界见 [SYSTEM-REVIEW.md](SYSTEM-REVIEW.md)。
 开发任务见 [GitHub Issues](https://github.com/junxianxia0413-eng/private-fixed-egress/issues)。
 当前连接没有 Milestone 创建能力，暂用 Phase 0–10 共 11 个 Issue 跟踪。
 
@@ -64,4 +66,3 @@ Debian 12 部署步骤见 [deploy/README.md](deploy/README.md)。
 “网络监控”页面会分别显示服务器到 ISP 代理入口的 TCP 延迟、抖动、ICMP 信息、服务通过率和资源使用率。它不等于手机到服务器的实际延迟，也不把网站完整响应时间冒充线路延迟；手机体验仍需用真实 Wi-Fi/蜂窝网络验收。
 
 服务器操作见 [gateways/README.md](gateways/README.md)，测试证据与未完成的真实手机验收见 [VALIDATION.md](VALIDATION.md)。目前仍保持开放的验收项是两台 iPhone 实机导入、同出口、IPv6/DNS 和手机侧延迟记录。
-
