@@ -60,7 +60,12 @@ def gateway_status(request: Request):
 async def add_gateway(request: Request):
     session, form = await authenticated_form(request)
     try:
-        await run_in_threadpool(register, request.app.state.settings, form, session["username"])
+        identifier = await run_in_threadpool(
+            register, request.app.state.settings, form, session["username"]
+        )
+        await run_in_threadpool(
+            enqueue, request.app.state.settings, identifier, "deploy", session["username"]
+        )
     except ValueError as exc:
         # Credentials are deliberately never repopulated into the returned form.
         return page(request, session, str(exc), 400)

@@ -77,6 +77,7 @@ def probe(settings, gateway, kind):
             raise ValueError("Invalid health report")
         safe = {k: report[k] for k in required}
         safe["isp_bound"] = report.get("isp_bound") is True
+        safe["https_ready"] = report.get("https_ready")
         safe["version"] = str(report.get("version", ""))[:120]
         for key in ("cpu_percent", "ram_percent", "disk_percent"):
             if not numeric(report.get(key), 100):

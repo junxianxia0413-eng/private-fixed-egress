@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import io
+import socket
 import time
 
 import paramiko
@@ -39,6 +40,19 @@ def parse_host_key(value: str):
 
 def fingerprint(key):
     return "SHA256:" + base64.b64encode(hashlib.sha256(key.asbytes()).digest()).decode().rstrip("=")
+
+
+def discover_host_key(address, port):
+    """Pin the key on first contact; all authenticated connections still enforce it."""
+    try:
+        with socket.create_connection((address, port), timeout=8) as sock:
+            with paramiko.Transport(sock) as transport:
+                transport.get_security_options().key_types = ("ssh-ed25519",)
+                transport.start_client(timeout=8)
+                key = transport.get_remote_server_key()
+                return key.get_name() + " " + key.get_base64()
+    except Exception:
+        raise ValueError("无法读取服务器指纹，请检查公网 IP、SSH 端口和服务器安全组。") from None
 
 
 def connect_gateway(gateway, username, credentials):
@@ -103,6 +117,12 @@ def execute(client, command, *, stdin=b"", timeout=30):
             time.sleep(0.05)
         code = channel.recv_exit_status()
         if code:
+            if code == 75:
+                raise GatewayError("网关配置正忙，现有配置已保留。请等待当前任务结束后重试。")
+            if code == 79:
+                raise GatewayError(
+                    "HTTPS 入口验证失败，请检查服务器安全组是否开放 TCP 80、443、8443。"
+                )
             raise GatewayError(f"远程操作失败（状态码 {code}），保留当前配置，可检测后重试。")
         return output.decode("utf-8")
     finally:

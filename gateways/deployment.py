@@ -1,5 +1,6 @@
 """Pin software and host identity; never interpolate submitted fields into shell commands."""
 
+import http.client
 import json
 from pathlib import Path
 
@@ -14,6 +15,23 @@ INITIAL_CONFIG = {
 ADMIN = "sudo -n /usr/local/sbin/pfem-gateway-admin "
 
 
+def verify_ingress(gateway):
+    for port in (443, 8443):
+        connection = http.client.HTTPSConnection(gateway["host"], port, timeout=12)
+        try:
+            connection.request("GET", "/healthz")
+            response = connection.getresponse()
+            response.read(128)
+            if response.status != 200:
+                raise ValueError("HTTPS health check failed")
+        except Exception:
+            raise GatewayError(
+                f"手机 HTTPS 入口 {port} 无法从控制台验证。请检查 VPS 安全组、防火墙和证书。"
+            ) from None
+        finally:
+            connection.close()
+
+
 def health(client, action="status"):
     if action not in {"status", "reconcile", "restart", "harden", "commit-harden"}:
         raise ValueError("Unknown remote action")
@@ -25,6 +43,7 @@ def health(client, action="status"):
         "probe_available": result.get("probe_available", False),
         "config_api": result.get("config_api", False),
         "phone_api": result.get("phone_api", False),
+        "https_ready": result.get("https_ready"),
         "guard": {
             k: result.get("guard", {}).get(k)
             for k in (
@@ -83,6 +102,8 @@ def bootstrap(gateway, credentials, managed):
                 "quality.py",
                 "guard.service",
                 "guard.timer",
+                "ingress.py",
+                "https_ingress.sh",
             ):
                 with sftp.open(f"{directory}/{name}", "w") as file:
                     file.write((FILES / name).read_bytes())
@@ -90,6 +111,7 @@ def bootstrap(gateway, credentials, managed):
                 "management.pub": "restrict " + managed["public_key"] + "\n",
                 "recovery.pub": managed["recovery_public_key"] + "\n",
                 "initial.json": json.dumps(INITIAL_CONFIG),
+                "gateway.json": json.dumps({"host": gateway["host"]}),
             }.items():
                 with sftp.open(f"{directory}/{name}", "w") as file:
                     file.write(content)
@@ -112,7 +134,7 @@ def deploy(gateway, store, stage):
             if (
                 not report["probe_available"]
                 or not report["config_api"]
-                or report["phone_api"] != 8
+                or report["phone_api"] != 9
             ):
                 raise GatewayError("网关需要更新管理组件。")
     except GatewayError:
@@ -124,6 +146,8 @@ def deploy(gateway, store, stage):
             if not gateway["bootstrap_ref"]:
                 raise
             bootstrap(gateway, store.get(gateway["bootstrap_ref"]), managed)
+    stage("VERIFYING_HTTPS")
+    verify_ingress(gateway)
     stage("VERIFYING_KEYS")
     with connect_gateway(gateway, "root", {"private_key": managed["recovery_private_key"]}):
         pass

@@ -131,13 +131,23 @@ def status():
         guard = json.loads(Path("/var/lib/pfem-gateway-admin/guard.json").read_text())
     except (OSError, ValueError):
         guard = {}
+    ingress_marker = Path("/etc/pfem-gateway/https-ingress-v1")
+    https_ready = None
+    if ingress_marker.is_file():
+        sys.path.insert(0, "/usr/local/lib/pfem_gateway")
+        from gateways.ingress import check_https
+
+        https_ready = command(
+            ["/usr/bin/systemctl", "is-active", "caddy"]
+        ).returncode == 0 and check_https(ingress_marker.read_text().strip())
     return {
         **network_metrics(),
         "guard": guard,
         "probe_available": Path("/usr/local/sbin/pfem-isp-probe").is_file(),
         "config_api": Path("/usr/local/lib/pfem_gateway/gateways/transactions.py").is_file(),
-        "phone_api": 8 if Path("/usr/local/lib/pfem_gateway/gateways/quality.py").is_file() else 0,
-        "healthy": active and firewall and valid and port and blocked,
+        "phone_api": 9 if ingress_marker.is_file() else 8,
+        "https_ready": https_ready,
+        "healthy": active and firewall and valid and port and blocked and https_ready is not False,
         "ssh_key_only": key_only,
         "firewall": firewall,
         "egress_blocked": blocked,

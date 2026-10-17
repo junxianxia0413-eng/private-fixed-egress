@@ -25,7 +25,8 @@
           {% set cpu = g.health.get('cpu_percent') %}{% set ram = g.health.get('ram_percent') %}
           <div><dt>CPU / 内存</dt><dd>{{ ('<1%' if cpu == 0 else cpu ~ '%') if cpu is not none else '—' }} / {{ (ram ~ '%') if ram is not none else '—' }}</dd></div>
           <div><dt>磁盘使用</dt><dd>{{ g.health.get('disk_percent','—') }}%</dd></div>
-          <div><dt>固定出口</dt><dd>尚未接入</dd></div>
+          <div><dt>手机 HTTPS 入口</dt><dd>{{ '正常' if g.health.get('https_ready') == true else '待验证' }}</dd></div>
+          <div><dt>出口线路</dt><dd>{{ '已接入 ' ~ g.applied_exits ~ ' 条' if g.applied_exits else '尚未接入' }}</dd></div>
         </dl>
         <p class="fine">最近检测：{{ g.last_check }}{% if g.stale %} · 状态需要更新{% endif %}</p>
         {% if g.busy %}<p class="pill">任务处理中，页面会自动更新</p>{% endif %}
@@ -54,21 +55,23 @@
           <label>首次登录账户<input name="bootstrap_user" value="root" readonly></label>
           <label>SSH 密码<input name="password" type="password" maxlength="256" autocomplete="new-password"></label></div>
         <label>或使用 Ed25519 私钥<textarea name="private_key" rows="3" placeholder="使用密码时留空"></textarea></label>
-        <label>服务器 Ed25519 主机公钥<input name="host_key" required placeholder="ssh-ed25519 AAAA..."></label>
-        <p class="fine">主机公钥用于核实连接到正确的服务器，可从服务器控制面板终端读取 /etc/ssh/ssh_host_ed25519_key.pub；只填写密钥类型与内容。</p>
-        <button class="primary" type="submit">保存服务器 <span>→</span></button>
+        <details><summary>高级：手动核对服务器指纹</summary>
+          <label>服务器 Ed25519 主机公钥（可选）<input name="host_key" placeholder="留空时首次连接自动读取并固定"></label>
+          <p class="fine">首次连接按你填写的 IP 读取并固定指纹；以后指纹改变会拒绝连接。已从服务商核实公钥时，可在这里手动填写。</p>
+        </details>
+        <button class="primary" type="submit">保存并自动部署 <span>→</span></button>
       </form>
     </details>
     <section class="panel history"><div class="section-heading"><h2>部署与检测记录</h2><span class="muted">最近 30 项</span></div>
       <div class="table-wrap"><table><thead><tr><th>任务</th><th>服务器</th><th>操作</th><th>进度</th><th>结果</th></tr></thead><tbody>
         {% for j in jobs %}<tr><td>#{{ j.id }}</td><td>{{ j.name }}</td>
           <td>{{ {'deploy':'部署','check':'检测','restart':'重启'}.get(j.kind,j.kind) }}</td>
-          <td>{{ {'QUEUED':'等待处理','CONNECTING':'连接服务器','INSTALLING':'安装组件','VERIFYING_KEYS':'验证密钥','HARDENING':'保护登录','CHECKING':'检测服务','COMPLETE':'已完成'}.get(j.stage,j.stage) }}</td>
+          <td>{{ {'QUEUED':'等待处理','CONNECTING':'连接服务器','INSTALLING':'安装组件','VERIFYING_HTTPS':'验证手机入口','VERIFYING_KEYS':'验证密钥','HARDENING':'保护登录','CHECKING':'检测服务','COMPLETE':'已完成'}.get(j.stage,j.stage) }}</td>
           <td>{{ {'QUEUED':'排队中','RUNNING':'进行中','SUCCEEDED':'成功','FAILED':'失败'}.get(j.state,j.state) }}{% if j.error %}<br>{{ j.error }}{% endif %}</td></tr>
         {% else %}<tr><td colspan="5">还没有执行记录</td></tr>{% endfor %}
       </tbody></table></div>
     </section>
-    <footer>检测结果保留 5 分钟有效期 · 定时监测将在后续阶段接入</footer>
+    <footer>部署后自动定时检测 · 指纹变化、出口变化与服务故障会分别记录</footer>
   </main>
 </div>
 {% endblock %}

@@ -161,6 +161,41 @@ def test_duplicate_registration_cleans_only_new_secrets(settings, data):
     assert set(settings.secret_directory.iterdir()) == original
 
 
+def test_first_contact_key_is_automatically_pinned(settings, data, monkeypatch):
+    from controller.services import gateways
+
+    key = data.pop("host_key")
+    monkeypatch.setattr(gateways, "discover_host_key", lambda address, port: key)
+    gateway = register(settings, data, "admin")
+    with connect(settings.database_path) as db:
+        assert (
+            db.execute("SELECT host_key FROM gateways WHERE id=?", (gateway,)).fetchone()[0] == key
+        )
+
+
+def test_failed_automatic_key_discovery_saves_no_credentials(settings, data, monkeypatch):
+    from controller.services import gateways
+
+    data.pop("host_key")
+
+    def unavailable(*_):
+        raise ValueError("服务器未连接")
+
+    monkeypatch.setattr(gateways, "discover_host_key", unavailable)
+    with pytest.raises(ValueError, match="服务器未连接"):
+        register(settings, data, "admin")
+    assert not settings.secret_directory.exists()
+
+
+def test_saving_a_gateway_automatically_queues_its_deployment(client, settings, data):
+    login(client)
+    response = client.post("/gateways/add", data={**data, "csrf": csrf(client.get("/gateways"))})
+    assert response.status_code == 303
+    with connect(settings.database_path) as db:
+        jobs = db.execute("SELECT kind,state FROM gateway_jobs").fetchall()
+        assert [tuple(row) for row in jobs] == [("deploy", "QUEUED")]
+
+
 def test_concurrent_submission_enqueues_only_one_job(settings, data):
     gateway = register(settings, data, "admin")
 

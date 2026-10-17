@@ -12,7 +12,7 @@ from controller.services import exits, isps, monitor
 from controller.services.database import audit, connect
 from controller.services.secrets import SecretStore
 from gateways import deployment
-from gateways.ssh import GatewayError, fingerprint, generate_key, parse_host_key
+from gateways.ssh import GatewayError, discover_host_key, fingerprint, generate_key, parse_host_key
 
 
 def register(settings, data, actor):
@@ -29,7 +29,8 @@ def register(settings, data, actor):
     except ValueError:
         raise ValueError("请填写公网 IPv4 地址及 1–65535 范围内的 SSH 端口。") from None
     host_key = data.get("host_key", "").strip()
-    parse_host_key(host_key)
+    if host_key:
+        parse_host_key(host_key)
     if data.get("bootstrap_user", "root") != "root":
         raise ValueError("首次安装需要 root；安装后系统自动使用受限管理账户。")
     credentials = {k: data.get(k, "") for k in ("password", "private_key") if data.get(k)}
@@ -42,6 +43,9 @@ def register(settings, data, actor):
             paramiko.Ed25519Key.from_private_key(io.StringIO(credentials["private_key"]))
         except Exception:
             raise ValueError("私钥格式不正确；目前支持未加密的 Ed25519 私钥。") from None
+    if not host_key:
+        host_key = discover_host_key(str(address), port)
+        parse_host_key(host_key)
     private, public = generate_key()
     recovery_private, recovery_public = generate_key()
     store = SecretStore(settings.secret_directory)
@@ -98,7 +102,10 @@ def enqueue(settings, gateway_id, kind, actor):
 def snapshot(settings):
     with connect(settings.database_path) as db:
         rows = db.execute("""SELECT id,name,host,ssh_port,location,host_key,status,
-                          last_error,health_json,checked_at FROM gateways ORDER BY id""").fetchall()
+                          last_error,health_json,checked_at,
+                          (SELECT COUNT(*) FROM exit_groups e WHERE e.gateway_id=gateways.id
+                           AND e.applied=1) AS applied_exits
+                          FROM gateways ORDER BY id""").fetchall()
         jobs = [
             dict(r)
             for r in db.execute("""SELECT j.id,j.gateway_id,g.name,j.kind,j.state,

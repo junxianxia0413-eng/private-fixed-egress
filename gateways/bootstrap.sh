@@ -21,7 +21,7 @@ if [[ ! -e $managed ]]; then
 fi
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y --no-install-recommends ca-certificates curl nftables sudo iputils-ping
+apt-get install -y --no-install-recommends ca-certificates curl nftables sudo iputils-ping python3
 install -d -m 755 "$managed"
 touch "$managed/managed-v1"
 id proxyadmin >/dev/null 2>&1 || useradd --create-home --shell /bin/bash proxyadmin
@@ -53,7 +53,7 @@ fi
 /usr/local/bin/pfem-sing-box check -c "$managed/config.json"
 install -d -m 755 /usr/local/lib/pfem_gateway /usr/local/lib/pfem_gateway/gateways
 install -d -m 700 /var/lib/pfem-gateway-admin
-for module in __init__.py configuration.py transactions.py remote_probe.py guard.py quality.py; do
+for module in __init__.py configuration.py transactions.py remote_probe.py guard.py quality.py ingress.py; do
   install -m 644 "$module" "/usr/local/lib/pfem_gateway/gateways/$module"
 done
 install -m 755 remote_admin.py /usr/local/sbin/pfem-gateway-admin
@@ -98,4 +98,5 @@ systemctl start pfem-gateway-recover.service
 systemctl restart pfem-gateway-firewall.service
 systemctl start pfem-gateway.service
 systemctl enable --now pfem-gateway-guard.timer
+bash https_ingress.sh
 echo PFEM_BOOTSTRAP_OK
