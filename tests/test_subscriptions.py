@@ -126,6 +126,21 @@ def test_subscription_link_requires_csrf_and_secrets_never_appear_in_inventory(
     assert client.get(link).status_code == 503
 
 
+def test_reapplying_an_unchanged_subscription_keeps_its_existing_link_ready(
+    settings,
+    subscription_data,
+):
+    identifier = groups.register(settings, subscription_data, "admin")
+    subscriptions.activate(settings, identifier, "admin")
+    with connect(settings.database_path) as db:
+        db.execute("UPDATE exit_jobs SET state='SUCCEEDED'")
+        db.execute("UPDATE subscription_groups SET state='READY',deployed_exit_id=exit_id")
+    token = subscriptions.link(settings, identifier).rsplit("/", 1)[1]
+    before = subscriptions.payload(settings, token)
+    subscriptions.activate(settings, identifier, "admin")
+    assert subscriptions.payload(settings, token) == before
+
+
 def test_one_subscription_url_negotiates_shadowrocket_clash_and_browser(
     client, settings, subscription_data
 ):

@@ -35,7 +35,12 @@ def queue(db, identifier, actor):
         VALUES (?,?,?,?,?)""",
         (row["exit_id"], row["gateway_id"], actor, secrets.token_hex(16), int(time.time())),
     )
-    db.execute("UPDATE subscription_groups SET state='PENDING' WHERE id=?", (identifier,))
+    db.execute(
+        "UPDATE subscription_groups SET state=CASE "
+        "WHEN state='READY' AND deployed_exit_id=exit_id THEN 'READY' ELSE 'PENDING' END "
+        "WHERE id=?",
+        (identifier,),
+    )
     audit(db, actor, "subscription.apply.queued", f"group_id={identifier}")
 
 
