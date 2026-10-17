@@ -34,7 +34,7 @@ def verify_bundle(path):
     return manifest
 
 
-def create_bundle(database, secrets, output, sources=None, keep=14):
+def create_bundle(database, secrets, output, sources=None, keep=14, release_snapshot=None):
     if not database.is_file() or type(keep) is not int or keep < 1:
         raise ValueError("A database and positive backup retention are required")
     output.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -88,6 +88,10 @@ def create_bundle(database, secrets, output, sources=None, keep=14):
                     )
                 elif source.is_file():
                     shutil.copy2(source, stage / label)
+        if release_snapshot:
+            # Compress only private staged copies; a growing archive must not
+            # keep configuration apply, rollback or guard publication locked.
+            release_snapshot()
         files = sorted(p for p in stage.rglob("*") if p.is_file())
         manifest = {
             "version": 1,
@@ -112,7 +116,7 @@ def create_bundle(database, secrets, output, sources=None, keep=14):
         p for p in output.glob("pfem-full-*.tar.gz") if p.is_file() and not p.is_symlink()
     )
     for path in previous[:-keep]:
-        path.unlink()
+        path.unlink(missing_ok=True)
     return destination
 
 
@@ -132,8 +136,9 @@ def main():
     import fcntl
 
     settings = Settings.from_env()
-    with ExitStack() as stack:
-        for name in ("pfem-controller-upgrade", "pfem-gateway", "pfem-full-backup"):
+    with open("/run/lock/pfem-full-backup.lock", "a+b") as backup_lock, ExitStack() as stack:
+        fcntl.flock(backup_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        for name in ("pfem-controller-upgrade", "pfem-gateway"):
             lock = stack.enter_context(open(f"/run/lock/{name}.lock", "a+b"))
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if Path("/var/lib/pfem-gateway-admin/pending").exists():
@@ -153,7 +158,11 @@ def main():
             }
         )
         destination = create_bundle(
-            settings.database_path, settings.secret_directory, args.output_directory, paths
+            settings.database_path,
+            settings.secret_directory,
+            args.output_directory,
+            paths,
+            release_snapshot=stack.close,
         )
     print(f"Complete private backup verified: {destination.name}")
 

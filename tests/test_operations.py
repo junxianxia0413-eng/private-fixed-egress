@@ -57,6 +57,25 @@ def test_backup_retention_preserves_other_files(settings):  # noqa: F811
     assert unrelated.read_text() == "keep"
 
 
+def test_backup_releases_configuration_lock_before_compression(settings, monkeypatch):  # noqa: F811
+    from scripts import full_backup
+
+    released = []
+    original = full_backup.tarfile.open
+
+    def archive(*args, **kwargs):
+        assert released, "Compression must not retain the live configuration lock"
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(full_backup.tarfile, "open", archive)
+    create_bundle(
+        settings.database_path,
+        settings.secret_directory,
+        settings.database_path.parent / "released-backups",
+        release_snapshot=lambda: released.append(True),
+    )
+
+
 def test_backup_rejects_tampered_content(tmp_path):
     bundle = tmp_path / "tampered.tar.gz"
     with tarfile.open(bundle, "w:gz") as archive:
