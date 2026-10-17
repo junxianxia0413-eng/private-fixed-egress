@@ -93,4 +93,5 @@ curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 1
     --header "Host: ${PUBLIC_URL#https://}" --header 'X-Forwarded-Proto: https' \
     http://127.0.0.1:8000/healthz | python3 -c 'import json,sys; assert json.load(sys.stdin)=={"status":"ok","component":"controller"}'
 trap - ERR
+bash "$app/deploy/install_operations.sh"
 echo "Release $new active; recovery snapshot: $snapshot"

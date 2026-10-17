@@ -1,0 +1,15 @@
+[Unit]
+Description=Verified database, credentials and Gateway recovery backup
+After=private-fixed-egress.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/private-fixed-egress
+EnvironmentFile=/etc/private-fixed-egress/controller.env
+ExecStart=/opt/private-fixed-egress/.venv/bin/python -m scripts.full_backup
+TimeoutStartSec=120
+Restart=on-failure
+RestartSec=10min
+UMask=0077
+Nice=10
+IOSchedulingClass=idle

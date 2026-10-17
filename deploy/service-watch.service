@@ -1,0 +1,11 @@
+[Unit]
+Description=Recover local Controller, HTTPS and Gateway failures
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/private-fixed-egress
+EnvironmentFile=/etc/private-fixed-egress/controller.env
+ExecStart=/opt/private-fixed-egress/.venv/bin/python -m scripts.service_watch
+TimeoutStartSec=25
+UMask=0077

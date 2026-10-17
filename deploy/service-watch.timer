@@ -1,0 +1,11 @@
+[Unit]
+Description=Check local service recovery every thirty seconds
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=30s
+AccuracySec=1s
+Unit=pfem-service-watch.service
+
+[Install]
+WantedBy=timers.target

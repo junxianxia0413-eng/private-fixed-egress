@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily private full recovery backup
+
+[Timer]
+OnCalendar=*-*-* 19:10:00 UTC
+OnBootSec=10min
+RandomizedDelaySec=5min
+Persistent=true
+Unit=pfem-full-backup.service
+
+[Install]
+WantedBy=timers.target

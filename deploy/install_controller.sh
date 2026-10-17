@@ -107,6 +107,7 @@ if ! systemctl reload-or-restart caddy; then
     die 'Caddy reload failed; previous configuration restored.'
 fi
 systemctl enable caddy
+bash "$app_dir/deploy/install_operations.sh"
 printf '%s\n' "$revision" > "$app_dir/.installed-revision"
 chmod 0644 "$app_dir/.installed-revision"
 curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 --retry-max-time 120 --max-time 15 "https://$domain/healthz" \
