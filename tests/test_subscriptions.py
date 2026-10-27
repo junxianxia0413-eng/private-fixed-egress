@@ -7,10 +7,11 @@ from urllib.parse import parse_qs, unquote, urlsplit
 import pytest
 import yaml
 
-from controller.services import exits, groups, subscriptions
+from controller.services import exits, groups, isps, subscriptions
 from controller.services.database import connect
 from controller.services.secrets import SecretStore
 from gateways.configuration import client_uuid, render, validate
+from gateways.ssh import GatewayError
 from tests.test_controller import csrf, login
 from tests.test_exits import group_data, topology  # noqa: F401
 from tests.test_gateways import client, data, settings  # noqa: F401
@@ -139,6 +140,111 @@ def test_reapplying_an_unchanged_subscription_keeps_its_existing_link_ready(
     before = subscriptions.payload(settings, token)
     subscriptions.activate(settings, identifier, "admin")
     assert subscriptions.payload(settings, token) == before
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_changing_exit_keeps_url_and_qr_but_applies_client_routing_and_ip_labels(
+    client, settings, subscription_data, isp_data, monkeypatch, failed
+):
+    identifier = groups.register(settings, subscription_data, "admin")
+    subscriptions.activate(settings, identifier, "admin")
+
+    def success(settings, gateway, desired, transaction, stage):
+        return {g["id"]: {"exit_ip": g["expected_ip"], "latency_ms": 20} for g in desired}, "a" * 64
+
+    monkeypatch.setattr(exits, "apply_remote", success)
+    assert exits.run_next(settings)
+    link = subscriptions.link(settings, identifier)
+    qr = subscriptions.qr_data(link)
+    token = link.rsplit("/", 1)[1]
+    before = subscriptions.payload(settings, token)
+    second_isp = isps.register(
+        settings,
+        {**isp_data, "name": "NEW-ISP", "host": "8.8.4.4", "expected_exit_ip": "8.8.4.4"},
+        "admin",
+    )
+    with connect(settings.database_path) as db:
+        db.execute(
+            "UPDATE isp_exits SET status='HEALTHY',current_exit_ip='8.8.4.4',tested_at=? "
+            "WHERE id=?",
+            (int(time.time()), second_isp),
+        )
+    second = exits.register(
+        settings,
+        {"name": "NEW-EXIT", "gateway_id": isp_data["gateway_id"], "isp_id": str(second_isp)},
+        "admin",
+    )
+    with connect(settings.database_path) as db:
+        db.execute(
+            "UPDATE exit_groups SET applied=1,status='HEALTHY',current_exit_ip='8.8.4.4',"
+            "checked_at=? WHERE id=?",
+            (int(time.time()), second),
+        )
+    confirmation = groups.prepare_change(settings, identifier, str(second), "admin")
+    groups.confirm_change(settings, identifier, confirmation["token"], "admin")
+    pending = groups.snapshot(settings)[0]
+    assert pending["expected_exit_ip"] == "8.8.4.4"
+    assert pending["deployed_exit_ip"] == "1.1.1.1" and not pending["binding_applied"]
+    assert pending["applying"] and not pending["exit_verified"]
+    with pytest.raises(ValueError):
+        subscriptions.payload(settings, token)
+    login(client)
+    form_csrf = csrf(client.get("/groups"))
+    preview = client.post(f"/groups/{identifier}/link", data={"csrf": form_csrf})
+    preview_html = preview.content.decode()
+    assert "1.1.1.1" in preview_html and "8.8.4.4" in preview_html
+    assert "预期出口不代表已经切换成功" in preview_html
+
+    def apply(settings, gateway, desired, transaction, stage):
+        assert any(
+            c["id"] == identifier for g in desired if g["id"] == second for c in g["clients"]
+        )
+        assert not any(
+            c["id"] == identifier for g in desired if g["id"] != second for c in g["clients"]
+        )
+        config, _ = render(desired, 995)
+        assert any(
+            f"subscription-tls-{identifier}" in rule.get("inbound", [])
+            and rule.get("outbound") == f"isp-{second}"
+            for rule in config["route"]["rules"]
+        )
+        if failed:
+            raise GatewayError("test upstream unavailable")
+        return success(settings, gateway, desired, transaction, stage)
+
+    monkeypatch.setattr(exits, "apply_remote", apply)
+    assert exits.run_next(settings)
+    assert subscriptions.link(settings, identifier) == link
+    assert subscriptions.qr_data(link) == qr
+    after = groups.snapshot(settings)[0]
+    if failed:
+        assert not after["binding_applied"] and not after["exit_verified"]
+        assert after["deployed_exit_ip"] == "1.1.1.1"
+        assert after["apply_state"] == "FAILED"
+        with pytest.raises(ValueError):
+            subscriptions.payload(settings, token)
+    else:
+        assert after["binding_applied"] and after["exit_verified"]
+        content = subscriptions.payload(settings, token)
+        assert content != before
+        assert "出口 8.8.4.4" in unquote(base64.b64decode(content).decode())
+        assert "出口 1.1.1.1" not in unquote(base64.b64decode(content).decode())
+        document = yaml.safe_load(subscriptions.payload(settings, token, "clash"))
+        assert all("8.8.4.4" in proxy["name"] for proxy in document["proxies"])
+        assert all(proxy["server"] == "8.8.8.8" for proxy in document["proxies"])
+
+
+@pytest.mark.parametrize(
+    "agent", ["ClashForAndroid/2.5", "ClashMetaForAndroid/2.11", "FlClash/0.8"]
+)
+def test_mobile_clash_clients_receive_yaml(client, settings, subscription_data, agent):
+    identifier = groups.register(settings, subscription_data, "admin")
+    subscriptions.activate(settings, identifier, "admin")
+    with connect(settings.database_path) as db:
+        db.execute("UPDATE subscription_groups SET state='READY',deployed_exit_id=exit_id")
+    response = client.get(subscriptions.link(settings, identifier), headers={"user-agent": agent})
+    assert response.status_code == 200
+    assert yaml.safe_load(response.text)["proxies"][0]["type"] == "vless"
 
 
 def test_one_subscription_url_negotiates_shadowrocket_clash_and_browser(

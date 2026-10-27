@@ -196,6 +196,10 @@ def _record(settings, token):
     return dict(row), password
 
 
+def _node_name(row, label):
+    return f"{row['name']} · 出口 {row['expected_exit_ip']} · {label}"
+
+
 def _node(row, password, port, label):
     query = urlencode(
         {
@@ -210,7 +214,7 @@ def _node(row, password, port, label):
     )
     node = (
         f"vless://{client_uuid(password)}@{row['host']}:{port}?{query}#"
-        f"{quote(row['name'] + ' · ' + label, safe='')}"
+        f"{quote(_node_name(row, label), safe='')}"
     )
     return node
 
@@ -224,8 +228,8 @@ def shadowrocket_payload(row, password):
 
 
 def clash_payload(row, password):
-    primary = row["name"] + " · 443 主入口"
-    alternate = row["name"] + " · 8443 备用入口"
+    primary = _node_name(row, "443 主入口")
+    alternate = _node_name(row, "8443 备用入口")
     proxy_group = row["name"] + " · 固定出口"
     document = {
         "mixed-port": 7890,

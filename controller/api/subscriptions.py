@@ -4,7 +4,7 @@ from fastapi.responses import PlainTextResponse, RedirectResponse
 from controller.api.dashboard import templates
 from controller.api.gateways import authenticated_form
 from controller.api.groups import page
-from controller.services import subscriptions
+from controller.services import groups, subscriptions
 
 router = APIRouter()
 
@@ -18,7 +18,7 @@ def subscription(request: Request, token: str):
     accept = request.headers.get("accept", "").lower()
     if requested:
         format_name = requested
-    elif any(value in user_agent for value in ("clash-verge", "mihomo", "clash.meta")):
+    elif any(value in user_agent for value in ("clash", "mihomo", "flclash")):
         format_name = "clash"
     elif "shadowrocket" in user_agent:
         format_name = "shadowrocket"
@@ -81,6 +81,9 @@ async def show_link(request: Request, identifier: int):
     session, _ = await authenticated_form(request)
     try:
         link = subscriptions.link(request.app.state.settings, identifier)
+        group = next(
+            row for row in groups.snapshot(request.app.state.settings) if row["id"] == identifier
+        )
     except ValueError as exc:
         return page(request, session, str(exc), 400)
     return templates.TemplateResponse(
@@ -89,6 +92,7 @@ async def show_link(request: Request, identifier: int):
         headers={"Referrer-Policy": "no-referrer"},
         context={
             "link": link,
+            "group": group,
             "qr": subscriptions.qr_data(link),
             "csrf": session["csrf_token"],
             "username": session["username"],

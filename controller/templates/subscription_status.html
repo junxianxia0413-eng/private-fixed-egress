@@ -1,0 +1,15 @@
+<section class="subscription-status" aria-label="订阅出口状态">
+  {% if group.applying %}<p class="fine" role="status">正在应用出口并验证，请稍候。预期出口不代表已经切换成功。</p>
+  {% elif not group.binding_applied %}<p class="error" role="status">所选出口尚未应用成功。{% if group.deployed_exit_name %}上次已应用：{{ group.deployed_exit_name }} / {{ group.deployed_exit_ip or '尚未取得' }}。{% endif %}请应用订阅并等待验证。</p>
+  {% elif group.exit_verified %}<p class="fine">所选出口已应用，最近线路检测与预期一致。</p>
+  {% else %}<p class="fine">已有应用记录，当前出口需重新检测；请勿仅凭预期 IP 判断已连接。</p>{% endif %}
+  {% if group.apply_state == 'FAILED' and group.apply_error %}<p class="error">最近应用失败：{{ group.apply_error }}</p>{% endif %}
+  <dl class="facts">
+    <div><dt>入口服务器（连接地址）</dt><dd>{{ group.gateway_host }}</dd></div>
+    <div><dt>预期出口 IP</dt><dd>{{ group.expected_exit_ip or '尚未取得' }}</dd></div>
+    {% if not group.binding_applied and group.deployed_exit_name %}<div><dt>上次已应用出口</dt><dd>{{ group.deployed_exit_name }} / {{ group.deployed_exit_ip or '尚未取得' }}</dd></div>{% endif %}
+    <div><dt>所选线路最近检测 IP</dt><dd>{{ group.route_current_ip or '尚未取得' }}</dd></div>
+    <div><dt>线路检测时间</dt><dd>{{ group.last_verified }}{% if not group.exit_verified %}<br><span class="fine">尚未确认订阅当前出口</span>{% endif %}</dd></div>
+  </dl>
+  <p class="fine">更换同一网关的出口后，订阅地址和二维码保持不变，服务器会应用新出口。客户端刷新订阅后，节点名称会显示出口 IP；连接地址仍是入口服务器。切换后请断开重连，让新连接使用新出口。</p>
+</section>

@@ -1,11 +1,13 @@
 {% extends "base.html" %}{% block title %}导入订阅 · Private Network{% endblock %}
 {% block body %}<div class="dashboard">{% include "sidebar.html" %}<main class="main-content">
 <section class="page-heading"><div><h1>组内设备，共用这个统一订阅</h1><p class="muted">同一个二维码和链接适配 Shadowrocket 与 Clash Verge Rev。</p></div></section>
+<section class="panel"><h2>{{ group.name }} · 当前出口</h2>{% include 'subscription_status.html' %}</section>
 <section class="content-grid"><article class="panel"><h2>方法一：扫描二维码</h2>
 <img class="subscription-qr" src="{{ qr }}" alt="统一订阅二维码" width="300" height="300">
 <p>Shadowrocket 可直接扫码；电脑端 Clash Verge Rev 使用右侧相同链接添加远程订阅。</p>
 </article><article class="panel"><h2>方法二：复制链接</h2><label>订阅链接<input value="{{ link }}" readonly aria-label="订阅链接" autofocus></label>
-<p>服务器会自动识别客户端并返回对应格式。识别失败时，用浏览器打开链接选择格式。</p></article></section>
+<p>这是订阅入口，不是最终出口 IP。同一网关内更换出口不需要更换这个链接或重新扫码。</p>
+<p>服务器会自动识别客户端并返回对应格式。识别失败时，用浏览器打开链接选择格式。手机上的 Clash/Mihomo 也可以使用这个订阅；旧版不支持 VLESS 的内核需先升级。</p></article></section>
 <section class="panel">
 <p>连接时选择该节点，并使用“全局路由 → 代理”。请将 DNS 设置为经代理使用的 HTTPS DNS，避免本地 DNS 直连。</p>
 <p class="muted">当前入口支持 TCP；UDP 游戏、语音和部分应用功能尚未验证。请先在组内设备的浏览器中分别访问出口检测网站，核对固定 IP。</p>

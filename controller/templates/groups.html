@@ -14,10 +14,11 @@
 
     <datalist id="device-options">{% for d in devices %}<option value="{{ d.name }}"></option>{% endfor %}</datalist>
     <section class="gateway-grid">
-    {% for g in groups %}<article class="panel gateway-card has-card-menu">
-      <div class="section-heading"><h2>{{ g.name }}</h2><span class="pill">{{ '已配置' if g.state == 'READY' else '待应用' }}</span></div>
+    {% for g in groups %}<article class="panel gateway-card has-card-menu" data-apply-pending="{{ 'true' if g.applying else 'false' }}" data-group-id="{{ g.id }}">
+      <div class="section-heading"><h2>{{ g.name }}</h2><span class="pill">{{ '正在应用' if g.applying else ('出口已验证' if g.exit_verified else ('待重新验证' if g.binding_applied else '待应用')) }}</span></div>
       <dl class="facts"><div><dt>设备</dt><dd>{% for d in g.devices %}{{ d.name }}{% if not loop.last %}<br>{% endif %}{% endfor %}</dd></div><div><dt>所选线路</dt><dd>{{ g.exit_name }}</dd></div><div><dt>出口来源</dt><dd>{{ g.isp_name }}</dd></div><div><dt>预期出口</dt><dd>{{ g.expected_exit_ip }}</dd></div><div><dt>AI 专用出口</dt><dd>{{ g.ai_exit_name or '未启用' }}{% if g.ai_providers %}<br><span class="fine">{{ g.ai_providers|join(' / ') }}</span>{% endif %}</dd></div></dl>
       {% if g.state != 'READY' %}<p class="fine">订阅配置尚未完成，不代表设备已经切换到所选出口。</p>{% endif %}
+      {% with group=g %}{% include 'subscription_status.html' %}{% endwith %}
       <form action="/groups/{{ g.id }}/activate" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="primary" type="submit">生成 / 应用订阅</button></form>
       {% if g.state == 'READY' %}<form action="/groups/{{ g.id }}/link" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="quiet" type="submit">查看订阅链接</button></form>{% endif %}
       <details class="group-editor"><summary>编辑名称、设备和 AI 分流</summary>
@@ -75,4 +76,4 @@
   </main>
 </div>
 {% endblock %}
-{% block scripts %}<script src="/static/groups.js" defer></script><script src="/static/card-actions.js" defer></script>{% endblock %}
+{% block scripts %}<script src="/static/groups.js" defer></script><script src="/static/card-actions.js" defer></script><script src="/static/subscription-status.js" defer></script>{% endblock %}

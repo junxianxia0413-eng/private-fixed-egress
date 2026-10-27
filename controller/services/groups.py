@@ -382,15 +382,42 @@ def snapshot(settings):
         rows = [
             dict(r)
             for r in db.execute("""SELECT s.id,s.name,s.exit_id,s.state,s.created_at,
+            s.deployed_exit_id,g.host AS gateway_host,
             e.name AS exit_name,e.gateway_id,e.exit_type,s.ai_exit_id,s.ai_providers,
+            e.current_exit_ip AS route_current_ip,e.checked_at AS route_checked_at,
+            e.status AS route_status,e.last_error AS route_error,
+            previous.name AS deployed_exit_name,previous.current_exit_ip AS deployed_exit_ip,
+            (SELECT j.state FROM exit_jobs j WHERE j.gateway_id=e.gateway_id
+             AND j.group_id=e.id ORDER BY j.id DESC LIMIT 1) AS apply_state,
+            (SELECT j.error FROM exit_jobs j WHERE j.gateway_id=e.gateway_id
+             AND j.group_id=e.id ORDER BY j.id DESC LIMIT 1) AS apply_error,
             COALESCE(i.name,'VPS 自带公网 IP') AS isp_name,
             COALESCE(i.expected_exit_ip,e.direct_expected_ip) AS expected_exit_ip,
             ae.name AS ai_exit_name
             FROM subscription_groups s JOIN exit_groups e ON s.exit_id=e.id
+            JOIN gateways g ON e.gateway_id=g.id
             LEFT JOIN isp_exits i ON e.isp_id=i.id
+            LEFT JOIN exit_groups previous ON s.deployed_exit_id=previous.id
             LEFT JOIN exit_groups ae ON s.ai_exit_id=ae.id ORDER BY s.id""")
         ]
         for row in rows:
+            row["applying"] = row["apply_state"] in ("QUEUED", "RUNNING")
+            row["binding_applied"] = (
+                row["state"] == "READY" and row["exit_id"] == row["deployed_exit_id"]
+            )
+            row["exit_verified"] = bool(
+                row["binding_applied"]
+                and row["expected_exit_ip"]
+                and row["route_current_ip"] == row["expected_exit_ip"]
+                and row["route_status"] == "HEALTHY"
+                and row["route_checked_at"]
+                and -5 <= time.time() - row["route_checked_at"] <= 120
+            )
+            row["last_verified"] = (
+                datetime.fromtimestamp(row["route_checked_at"], UTC).strftime("%m-%d %H:%M:%S UTC")
+                if row["route_checked_at"]
+                else "尚未验证"
+            )
             row["ai_providers"] = json.loads(row["ai_providers"])
             row["devices"] = [
                 dict(r)
