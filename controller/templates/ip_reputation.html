@@ -1,0 +1,9 @@
+{% if ip %}<div class="ip-reputation" data-copy-scope>
+  <p class="fine">要查询的出口 IP：<strong>{{ ip }}</strong></p>
+  <div class="gateway-actions">
+    <a class="button-link" href="https://scamalytics.com/ip/{{ ip|urlencode }}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" data-copy-ip="{{ ip }}">复制 IP 并查信誉</a>
+    <a class="button-link" href="https://ippure.com/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" data-copy-ip="{{ ip }}">复制 IP 并打开 IPPure</a>
+  </div>
+  <p class="fine">“查信誉”直接查询上述 IP。IPPure 检查浏览器当前网络，请先连接这个订阅，并核对网站显示的 IP 与上述 IP 一致。检测结果以网站为准。</p>
+  <p class="fine copy-status" role="status" aria-live="polite" data-copy-status></p>
+</div>{% endif %}

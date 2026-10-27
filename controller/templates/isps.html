@@ -24,6 +24,7 @@
         <div><dt>国家 / 城市</dt><dd>{{ isp.country or '未填写' }} / {{ isp.city or '未填写' }}</dd></div>
         <div><dt>到期日</dt><dd>{{ isp.expires_on or '待补充' }}{% if isp.days_left is not none %}<br>剩余 {{ isp.days_left }} 天{% endif %}</dd></div></dl>
       <p class="fine">最近检测：{{ isp.last_test }}{% if isp.stale %} · 状态需要更新{% endif %}</p>
+      {% with ip=isp.current_exit_ip or isp.expected_exit_ip %}{% include 'ip_reputation.html' %}{% endwith %}
       <form action="/isps/{{ isp.id }}/test" method="post" class="gateway-actions"><input type="hidden" name="csrf" value="{{ csrf }}">
         <button class="quiet" type="submit" {{ 'disabled' if isp.busy else '' }}>{{ '检测中，页面会自动更新' if isp.busy else '立即检测' }}</button></form>
       <details><summary>编辑名称</summary><form action="/isps/{{ isp.id }}/edit" method="post">
@@ -91,4 +92,4 @@
   </main>
 </div>
 {% endblock %}
-{% block scripts %}<script src="/static/isps.js" defer></script><script src="/static/card-actions.js" defer></script>{% endblock %}
+{% block scripts %}<script src="/static/isps.js" defer></script><script src="/static/card-actions.js" defer></script><script src="/static/ip-tools.js" defer></script>{% endblock %}

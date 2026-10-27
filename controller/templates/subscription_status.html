@@ -12,4 +12,5 @@
     <div><dt>线路检测时间</dt><dd>{{ group.last_verified }}{% if not group.exit_verified %}<br><span class="fine">尚未确认订阅当前出口</span>{% endif %}</dd></div>
   </dl>
   <p class="fine">更换同一网关的出口后，订阅地址和二维码保持不变，服务器会应用新出口。客户端刷新订阅后，节点名称会显示出口 IP；连接地址仍是入口服务器。切换后请断开重连，让新连接使用新出口。</p>
+  {% with ip=group.expected_exit_ip %}{% include 'ip_reputation.html' %}{% endwith %}
 </section>

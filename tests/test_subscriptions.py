@@ -1,6 +1,7 @@
 # ruff: noqa: F811
 import base64
 import json
+import re
 import time
 from urllib.parse import parse_qs, unquote, urlsplit
 
@@ -245,6 +246,52 @@ def test_mobile_clash_clients_receive_yaml(client, settings, subscription_data, 
     response = client.get(subscriptions.link(settings, identifier), headers={"user-agent": agent})
     assert response.status_code == 200
     assert yaml.safe_load(response.text)["proxies"][0]["type"] == "vless"
+
+
+def test_reputation_links_query_exit_not_gateway_and_never_send_subscription_secrets(
+    client, settings, subscription_data, isp_data
+):
+    identifier = groups.register(settings, subscription_data, "admin")
+    subscriptions.activate(settings, identifier, "admin")
+    link = subscriptions.link(settings, identifier)
+    login(client)
+    form_csrf = csrf(client.get("/groups"))
+    pages = [
+        client.get("/groups"),
+        client.get("/isps"),
+        client.post(f"/groups/{identifier}/link", data={"csrf": form_csrf}),
+    ]
+    for page in pages:
+        assert page.status_code == 200
+        body = page.content.decode()
+        external = re.findall(r'href="(https://[^\"]+)"', body)
+        assert "https://scamalytics.com/ip/1.1.1.1" in external
+        assert "https://scamalytics.com/ip/8.8.8.8" not in external
+        assert "https://ippure.com/" in external
+        assert all("/sub/" not in url and link.rsplit("/", 1)[1] not in url for url in external)
+        assert isp_data["password"] not in body
+        assert 'rel="noopener noreferrer" referrerpolicy="no-referrer"' in body
+        assert "IPPure 检查浏览器当前网络" in body
+        assert 'data-copy-ip="1.1.1.1"' in body
+    assert 'data-copy-target="subscription-url"' in pages[-1].content.decode()
+
+
+@pytest.mark.parametrize("offset", [-1000, 1000])
+def test_subscription_summary_does_not_call_stale_or_future_checks_verified(
+    settings, subscription_data, offset
+):
+    identifier = groups.register(settings, subscription_data, "admin")
+    with connect(settings.database_path) as db:
+        db.execute(
+            "UPDATE subscription_groups SET state='READY',deployed_exit_id=exit_id WHERE id=?",
+            (identifier,),
+        )
+        db.execute(
+            "UPDATE exit_groups SET status='HEALTHY',current_exit_ip='1.1.1.1',checked_at=?",
+            (int(time.time()) + offset,),
+        )
+    summary = groups.snapshot(settings)[0]
+    assert summary["binding_applied"] and not summary["exit_verified"]
 
 
 def test_one_subscription_url_negotiates_shadowrocket_clash_and_browser(
