@@ -210,6 +210,8 @@ def _node(row, password, port, label):
             "sni": row["host"],
             "peer": row["host"],
             "path": tls_path(row["id"]),
+            # The current phone service is verified for TCP only, like the Clash profile.
+            "udp": "0",
         }
     )
     node = (

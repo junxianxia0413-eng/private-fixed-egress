@@ -97,6 +97,7 @@ def test_subscription_has_one_gateway_node_and_rotated_token_is_revoked(
         "sni": ["8.8.8.8"],
         "peer": ["8.8.8.8"],
         "path": ["/pfem-ws/13001"],
+        "udp": ["0"],
     }
     assert unquote(node.fragment).endswith("443 主入口")
     assert nodes[1].port == 8443

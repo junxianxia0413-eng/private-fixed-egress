@@ -206,7 +206,7 @@ CPU 使用率采用相邻健康检查之间的平均值，通常覆盖约一分�
 
 ## 当前限制
 
-- HTTPS 443 手机入口已验证 TCP；UDP 游戏、语音和部分实时应用仍需逐项测试。
+- HTTPS 443 手机入口已验证 TCP。订阅给出关闭 UDP 的设置，因为固定 SOCKS5 出口目前仅支持 TCP。刷新订阅后若 Shadowrocket 节点仍显示 UDP，可在节点详情关闭“UDP 转发”，并保持 UDP 失败时直连关闭，以免绕开固定出口。
 - 首版统一订阅正式支持 Shadowrocket 与 Clash Verge Rev；Stash、Surge 和 sing-box 客户端尚未列为正式兼容目标。
 - AI 分流依赖 TLS SNI 或 HTTP Host；使用加密客户端问候等隐藏域名技术的个别连接可能无法按域名分类。
 - AI 专用出口必须位于同一 Gateway，不支持跨 VPS 实时转发。
