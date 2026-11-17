@@ -127,15 +127,187 @@ def enqueue(settings, group_id, actor):
         raise ValueError("该网关已有配置任务，请稍后重试。") from None
 
 
+def _queue_change(db, row, actor, operation, change=None):
+    if db.execute(
+        "SELECT 1 FROM exit_jobs WHERE gateway_id=? AND state IN ('QUEUED','RUNNING')",
+        (row["gateway_id"],),
+    ).fetchone():
+        raise ValueError("该网关正在更新配置，请稍后重试。")
+    db.execute(
+        """INSERT INTO exit_jobs(group_id,gateway_id,actor,transaction_id,created_at,
+        operation,change_json) VALUES (?,?,?,?,?,?,?)""",
+        (
+            row["id"],
+            row["gateway_id"],
+            actor,
+            secrets.token_hex(16),
+            int(time.time()),
+            operation,
+            json.dumps(change) if change else None,
+        ),
+    )
+    audit(db, actor, "exit.change.queued", f"group_id={row['id']};operation={operation}")
+
+
+def _assert_unused(db, identifier):
+    group = db.execute(
+        """SELECT COALESCE(display_name,name) AS name FROM subscription_groups
+        WHERE exit_id=? OR ai_exit_id=? OR deployed_exit_id=? LIMIT 1""",
+        (identifier, identifier, identifier),
+    ).fetchone()
+    if group:
+        raise ValueError(f"线路仍被订阅组「{group['name']}」使用，请先更换出口并等待应用完成。")
+
+
+def _update_fields(db, identifier, values):
+    db.execute(
+        """UPDATE exit_groups SET name=?,gateway_id=?,exit_type=?,isp_id=?,
+        direct_expected_ip=?,verification_sources=? WHERE id=?""",
+        (
+            values["name"],
+            values["gateway_id"],
+            values["exit_type"],
+            values["isp_id"],
+            values["direct_expected_ip"],
+            values["verification_sources"],
+            identifier,
+        ),
+    )
+
+
+def edit(settings, identifier, data, actor):
+    name = data.get("name", "").strip()
+    exit_type = data.get("exit_type", "")
+    if not 1 <= len(name) <= 64 or exit_type not in EXIT_TYPES:
+        raise ValueError("请填写有效的线路名称和出口类型。")
+    try:
+        gateway_id = int(data.get("gateway_id", ""))
+        isp_id = int(data.get("isp_id", "")) if exit_type == "ISP_PROXY" else None
+    except ValueError:
+        raise ValueError("请选择网关与 ISP。") from None
+    with connect(settings.database_path) as db:
+        old = db.execute("SELECT * FROM exit_groups WHERE id=?", (identifier,)).fetchone()
+        gateway = db.execute("SELECT * FROM gateways WHERE id=?", (gateway_id,)).fetchone()
+    if not old:
+        raise ValueError("未找到出口线路。")
+    if not gateway or gateway["bootstrap_ref"]:
+        raise ValueError("请先完成网关部署。")
+    reroute = (gateway_id, exit_type, isp_id) != (
+        old["gateway_id"],
+        old["exit_type"],
+        old["isp_id"],
+    )
+    direct_ip, sources = old["direct_expected_ip"], old["verification_sources"]
+    if reroute and exit_type == "GATEWAY_DIRECT":
+        direct_ip, _, evidence = detect_direct(settings, dict(gateway))
+        sources = json.dumps(evidence)
+    elif reroute:
+        direct_ip, sources = None, "[]"
+    change = dict(
+        name=name,
+        gateway_id=gateway_id,
+        exit_type=exit_type,
+        isp_id=isp_id,
+        direct_expected_ip=direct_ip,
+        verification_sources=sources,
+    )
+    with connect(settings.database_path) as db:
+        db.execute("BEGIN IMMEDIATE")
+        latest = db.execute("SELECT * FROM exit_groups WHERE id=?", (identifier,)).fetchone()
+        keys = ("secret_ref", "name", "gateway_id", "exit_type", "isp_id", "applied")
+        if not latest or any(latest[k] != old[k] for k in keys):
+            raise ValueError("线路已变化，请刷新后重试。")
+        if db.execute(
+            "SELECT 1 FROM exit_groups WHERE name=? AND id<>?", (name, identifier)
+        ).fetchone():
+            raise ValueError("该线路名称已存在。")
+        if not reroute:
+            db.execute("UPDATE exit_groups SET name=? WHERE id=?", (name, identifier))
+            audit(db, actor, "exit.renamed", f"group_id={identifier}")
+            return
+        if (
+            isp_id is not None
+            and not db.execute(
+                """SELECT 1 FROM isp_exits WHERE id=? AND status IN ('HEALTHY','CHECKING')
+            AND expected_exit_ip=current_exit_ip AND tested_at BETWEEN ? AND ?
+            AND (expires_on IS NULL OR expires_on>=?)""",
+                (
+                    isp_id,
+                    int(time.time()) - 120,
+                    int(time.time()) + 5,
+                    datetime.now(UTC).date().isoformat(),
+                ),
+            ).fetchone()
+        ):
+            raise ValueError("请先验证选中的固定 ISP。")
+        if gateway_id != latest["gateway_id"]:
+            _assert_unused(db, identifier)
+            if latest["applied"]:
+                raise ValueError("已部署的线路不能直接跨网关移动，请删除后在新网关创建。")
+            if (
+                db.execute(
+                    "SELECT COUNT(*) FROM exit_groups WHERE gateway_id=?", (gateway_id,)
+                ).fetchone()[0]
+                >= 20
+            ):
+                raise ValueError("目标网关最多支持 20 条线路。")
+            if db.execute(
+                "SELECT 1 FROM exit_jobs WHERE gateway_id=? AND state IN ('QUEUED','RUNNING')",
+                (latest["gateway_id"],),
+            ).fetchone():
+                raise ValueError("原网关有配置任务，请等待完成。")
+            _update_fields(db, identifier, change)
+            db.execute(
+                "UPDATE exit_groups SET current_exit_ip=NULL,checked_at=NULL WHERE id=?",
+                (identifier,),
+            )
+            latest = db.execute("SELECT * FROM exit_groups WHERE id=?", (identifier,)).fetchone()
+            _queue_change(db, latest, actor, "APPLY")
+        else:
+            db.execute("UPDATE exit_groups SET name=? WHERE id=?", (name, identifier))
+            _queue_change(db, latest, actor, "EDIT", change)
+
+
+def _remove_row(db, row, actor):
+    identifier = row["id"]
+    db.execute(
+        "DELETE FROM group_confirmations WHERE old_exit_id=? OR new_exit_id=?",
+        (identifier, identifier),
+    )
+    db.execute("DELETE FROM exit_jobs WHERE group_id=?", (identifier,))
+    db.execute("DELETE FROM exit_groups WHERE id=?", (identifier,))
+    audit(db, actor, "exit.deleted", f"group_id={identifier};name={row['name']}")
+
+
+def delete(settings, identifier, actor):
+    with connect(settings.database_path) as db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute("SELECT * FROM exit_groups WHERE id=?", (identifier,)).fetchone()
+        if not row:
+            raise ValueError("未找到出口线路。")
+        _assert_unused(db, identifier)
+        if (
+            row["applied"]
+            or db.execute(
+                "SELECT 1 FROM exit_jobs WHERE group_id=? AND state IN ('QUEUED','RUNNING')",
+                (identifier,),
+            ).fetchone()
+        ):
+            _queue_change(db, row, actor, "DELETE")
+            return
+        _remove_row(db, row, actor)
+    SecretStore(settings.secret_directory).delete(row["secret_ref"])
+
+
 def snapshot(settings):
     with connect(settings.database_path) as db:
         rows = db.execute("""SELECT e.id,e.name,e.exit_type,e.status,e.last_error,
-            e.current_exit_ip,e.checked_at,e.latency_ms,e.applied,
+            e.current_exit_ip,e.checked_at,e.latency_ms,e.applied,e.gateway_id,e.isp_id,
             g.name AS gateway_name,COALESCE(i.name,'VPS 自带公网 IP') AS isp_name,
             COALESCE(i.expected_exit_ip,e.direct_expected_ip) AS expected_exit_ip,
             COALESCE(i.status,'HEALTHY') AS isp_status FROM exit_groups e
             JOIN gateways g ON e.gateway_id=g.id LEFT JOIN isp_exits i ON e.isp_id=i.id
-            ORDER BY e.id""").fetchall()
+            ORDER BY e.display_order=0,e.display_order,e.id""").fetchall()
         active = {
             r[0]
             for r in db.execute(
@@ -191,9 +363,30 @@ def desired(settings, job, excluded_clients=()):
             WHERE e.gateway_id=? AND s.client_ref IS NOT NULL""",
             (job["gateway_id"],),
         ).fetchall()
+        change = json.loads(job["change_json"]) if job.get("operation") == "EDIT" else None
+        replacement_isp = (
+            db.execute(
+                """SELECT host,port,secret_ref AS isp_secret,
+                expected_exit_ip AS isp_expected_exit_ip,status AS isp_status,
+                current_exit_ip AS isp_current,tested_at,expires_on FROM isp_exits WHERE id=?""",
+                (change["isp_id"],),
+            ).fetchone()
+            if change and change["isp_id"]
+            else None
+        )
+        if job.get("operation") == "DELETE":
+            _assert_unused(db, job["group_id"])
     groups = []
     today = datetime.now(UTC).date()
     for row in rows:
+        if row["id"] == job["group_id"] and job.get("operation") == "DELETE":
+            continue
+        if change and row["id"] == job["group_id"]:
+            row = {**dict(row), **change, "current_exit_ip": None}
+            if row["isp_id"]:
+                if not replacement_isp:
+                    raise GatewayError("所选 ISP 已不可用。")
+                row.update(dict(replacement_isp))
         is_direct = row["exit_type"] == "GATEWAY_DIRECT"
         expected_ip = row["direct_expected_ip"] if is_direct else row["isp_expected_exit_ip"]
         if not expected_ip:
@@ -343,7 +536,19 @@ def run_next(settings):
     try:
         gateway, groups = desired(settings, job)
         results, digest = apply_remote(settings, gateway, groups, job["transaction_id"], stage)
+        deleted = None
         with connect(settings.database_path) as db:
+            if job["operation"] == "EDIT":
+                change = json.loads(job["change_json"])
+                change["name"] = db.execute(
+                    "SELECT name FROM exit_groups WHERE id=?", (job["group_id"],)
+                ).fetchone()[0]
+                _update_fields(db, job["group_id"], change)
+            elif job["operation"] == "DELETE":
+                deleted = db.execute(
+                    "SELECT * FROM exit_groups WHERE id=?", (job["group_id"],)
+                ).fetchone()
+                _remove_row(db, deleted, job["actor"])
             for group in groups:
                 result = results.get(group["id"], {})
                 db.execute(
@@ -381,6 +586,8 @@ def run_next(settings):
                 (int(time.time()), job["id"]),
             )
             audit(db, job["actor"], "exit.apply.succeeded", f"group_id={job['group_id']}")
+        if deleted:
+            SecretStore(settings.secret_directory).delete(deleted["secret_ref"])
     except Exception as exc:
         error = str(exc) if isinstance(exc, GatewayError) else "出口组配置异常，请检测后重试。"
         with connect(settings.database_path) as db:

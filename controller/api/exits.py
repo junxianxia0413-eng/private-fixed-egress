@@ -6,6 +6,7 @@ from controller.api.dashboard import session_for, templates
 from controller.api.gateways import authenticated_form
 from controller.services import exits
 from controller.services.database import connect
+from gateways.ssh import GatewayError
 
 router = APIRouter()
 
@@ -37,7 +38,6 @@ def page(request, session, error=None, status_code=200):
             "isps": isps,
             "error": error,
             "active": "exits",
-            "refresh_seconds": 2 if any(value["busy"] for value in groups) else None,
         },
     )
 
@@ -76,6 +76,28 @@ async def apply_exit(request: Request, group_id: int):
     session, _ = await authenticated_form(request)
     try:
         exits.enqueue(request.app.state.settings, group_id, session["username"])
+    except ValueError as exc:
+        return page(request, session, str(exc), 400)
+    return RedirectResponse("/exits", status_code=303)
+
+
+@router.post("/exits/{group_id}/edit")
+async def edit_exit(request: Request, group_id: int):
+    session, form = await authenticated_form(request)
+    try:
+        await run_in_threadpool(
+            exits.edit, request.app.state.settings, group_id, form, session["username"]
+        )
+    except (ValueError, GatewayError) as exc:
+        return page(request, session, str(exc), 400)
+    return RedirectResponse("/exits", status_code=303)
+
+
+@router.post("/exits/{group_id}/delete")
+async def delete_exit(request: Request, group_id: int):
+    session, _ = await authenticated_form(request)
+    try:
+        exits.delete(request.app.state.settings, group_id, session["username"])
     except ValueError as exc:
         return page(request, session, str(exc), 400)
     return RedirectResponse("/exits", status_code=303)

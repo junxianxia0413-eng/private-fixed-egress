@@ -13,6 +13,12 @@ AI_PROVIDERS = {"ANTHROPIC", "OPENAI", "GEMINI"}
 
 
 def available_exit(db, identifier):
+    if db.execute(
+        """SELECT 1 FROM exit_jobs WHERE group_id=? AND operation='DELETE'
+        AND state IN ('QUEUED','RUNNING')""",
+        (identifier,),
+    ).fetchone():
+        raise ValueError("该线路正在删除，请选择其他出口。")
     row = db.execute(
         """SELECT e.*,COALESCE(i.name,'VPS 自带公网 IP') AS isp_name,
         COALESCE(i.expected_exit_ip,e.direct_expected_ip) AS expected_exit_ip,
@@ -76,10 +82,12 @@ def ai_selection(db, data, primary, current=None):
     return ai_exit_id, providers
 
 
-def member_fields(data):
+def member_fields(data, allow_empty=False):
     names = [value.strip() for value in form_values(data, "device_name")]
     raw_ids = form_values(data, "device_id")
-    if not 1 <= len(names) <= MAX_DEVICES or any(not name or len(name) > 64 for name in names):
+    if not (0 if allow_empty else 1) <= len(names) <= MAX_DEVICES or any(
+        not name or len(name) > 64 for name in names
+    ):
         raise ValueError("订阅组需要 1–20 台设备，每个名称为 1–64 个字符。")
     if len({name.casefold() for name in names}) != len(names):
         raise ValueError("同一订阅组内的设备名称不能重复。")
@@ -157,8 +165,16 @@ def register(settings, data, actor):
             members = resolve_members(db, fields, actor)
             identifier = db.execute(
                 """INSERT INTO subscription_groups
-                (name,exit_id,ai_exit_id,ai_providers,created_at) VALUES (?,?,?,?,?)""",
-                (name, exit_id, ai_exit_id, json.dumps(ai_providers), int(time.time())),
+                (name,display_name,exit_id,ai_exit_id,ai_providers,created_at)
+                VALUES (?,?,?,?,?,?)""",
+                (
+                    "group:" + secrets.token_hex(16),
+                    name,
+                    exit_id,
+                    ai_exit_id,
+                    json.dumps(ai_providers),
+                    int(time.time()),
+                ),
             ).lastrowid
             for slot, device in enumerate(members, 1):
                 db.execute(
@@ -181,14 +197,14 @@ def register(settings, data, actor):
             )
             return identifier
     except sqlite3.IntegrityError:
-        raise ValueError("组名称已存在，或所选设备已经属于其他订阅组。") from None
+        raise ValueError("所选设备已属于其他订阅组，或订阅组数量达到上限。") from None
 
 
 def update(settings, identifier, data, actor):
     name = data.get("name", "").strip()
     if not 1 <= len(name) <= 64:
         raise ValueError("组名称需为 1–64 个字符。")
-    fields = member_fields(data)
+    fields = member_fields(data, allow_empty=True)
     try:
         with connect(settings.database_path) as db:
             db.execute("BEGIN IMMEDIATE")
@@ -206,14 +222,22 @@ def update(settings, identifier, data, actor):
                 )
             ]
             members = resolve_members(db, fields, actor, identifier)
-            primary = available_exit(db, group["exit_id"])
-            ai_exit_id, ai_providers = ai_selection(db, data, primary, group)
+            previous_providers = json.loads(group["ai_providers"])
+            preserve_ai = "ai_exit_id" not in data or (
+                str(data.get("ai_exit_id", "")).strip() == str(group["ai_exit_id"] or "")
+                and form_values(data, "ai_provider") == previous_providers
+            )
+            if preserve_ai:
+                ai_exit_id, ai_providers = group["ai_exit_id"], previous_providers
+            else:
+                primary = available_exit(db, group["exit_id"])
+                ai_exit_id, ai_providers = ai_selection(db, data, primary, group)
             ai_changed = (
                 group["ai_exit_id"] != ai_exit_id
                 or json.loads(group["ai_providers"]) != ai_providers
             )
             db.execute(
-                """UPDATE subscription_groups SET name=?,ai_exit_id=?,ai_providers=?,
+                """UPDATE subscription_groups SET display_name=?,ai_exit_id=?,ai_providers=?,
                 state=CASE WHEN ai_exit_id IS ? AND ai_providers=? THEN state ELSE 'PENDING' END
                 WHERE id=?""",
                 (
@@ -242,7 +266,10 @@ def update(settings, identifier, data, actor):
                 json.dumps(
                     {
                         "group_id": identifier,
-                        "before": {"name": group["name"], "devices": before},
+                        "before": {
+                            "name": group["display_name"] or group["name"],
+                            "devices": before,
+                        },
                         "after": {
                             "name": name,
                             "devices": members,
@@ -254,7 +281,7 @@ def update(settings, identifier, data, actor):
                 ),
             )
     except sqlite3.IntegrityError:
-        raise ValueError("组名称已存在，或所选设备已经属于其他订阅组。") from None
+        raise ValueError("所选设备已属于其他订阅组。") from None
 
 
 def delete(settings, identifier, actor):
@@ -286,7 +313,10 @@ def delete(settings, identifier, actor):
                 db,
                 actor,
                 "group.deleted",
-                json.dumps({"group_id": identifier, "name": group["name"]}, ensure_ascii=False),
+                json.dumps(
+                    {"group_id": identifier, "name": group["display_name"] or group["name"]},
+                    ensure_ascii=False,
+                ),
             )
             transaction = None
         else:
@@ -362,7 +392,10 @@ def delete(settings, identifier, actor):
                 db,
                 actor,
                 "group.deleted",
-                json.dumps({"group_id": identifier, "name": group["name"]}, ensure_ascii=False),
+                json.dumps(
+                    {"group_id": identifier, "name": group["display_name"] or group["name"]},
+                    ensure_ascii=False,
+                ),
             )
     except Exception as exc:
         error = str(exc) if isinstance(exc, (GatewayError, ValueError)) else "删除配置异常。"
@@ -381,7 +414,8 @@ def snapshot(settings):
     with connect(settings.database_path) as db:
         rows = [
             dict(r)
-            for r in db.execute("""SELECT s.id,s.name,s.exit_id,s.state,s.created_at,
+            for r in db.execute("""SELECT s.id,COALESCE(s.display_name,s.name) AS name,
+            s.exit_id,s.state,s.created_at,
             s.deployed_exit_id,g.host AS gateway_host,
             e.name AS exit_name,e.gateway_id,e.exit_type,s.ai_exit_id,s.ai_providers,
             e.current_exit_ip AS route_current_ip,e.checked_at AS route_checked_at,
@@ -398,7 +432,8 @@ def snapshot(settings):
             JOIN gateways g ON e.gateway_id=g.id
             LEFT JOIN isp_exits i ON e.isp_id=i.id
             LEFT JOIN exit_groups previous ON s.deployed_exit_id=previous.id
-            LEFT JOIN exit_groups ae ON s.ai_exit_id=ae.id ORDER BY s.id""")
+            LEFT JOIN exit_groups ae ON s.ai_exit_id=ae.id
+            ORDER BY s.display_order=0,s.display_order,s.id""")
         ]
         for row in rows:
             row["applying"] = row["apply_state"] in ("QUEUED", "RUNNING")
@@ -472,7 +507,7 @@ def prepare_change(settings, identifier, new_exit_id, actor):
         return {
             "token": token,
             "group_id": identifier,
-            "name": group["name"],
+            "name": group["display_name"] or group["name"],
             "old": dict(old),
             "new": dict(new),
         }

@@ -11,13 +11,24 @@
 <header class="topbar"><span>工作空间 / 设备</span><form action="/logout" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><span>{{ username }}</span><button class="quiet" type="submit">退出</button></form></header>
 <section class="page-heading"><div><p class="eyebrow">DEVICES</p><h1>设备</h1><p class="muted">集中管理设备；也可以在订阅组中输入新名称自动创建。</p></div></section>
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-<section class="gateway-grid">{% for d in devices %}<article class="panel gateway-card">
+<p class="fine" data-card-order-status role="status">拖动卡片底部六点手柄，或用箭头排序。</p>
+<section class="gateway-grid" data-card-list="devices" data-csrf="{{ csrf }}">{% for d in devices %}<article class="panel gateway-card has-card-menu" data-card-id="{{ d.id }}">
 <div class="section-heading"><h2>{{ d.name }}</h2><span class="pill">已登记</span></div>
 <dl class="facts"><div><dt>类型</dt><dd>{{ d.type or '未填写' }}</dd></div><div><dt>系统</dt><dd>{{ d.platform }}</dd></div><div><dt>用途</dt><dd>{{ d.purpose or '未填写' }}</dd></div></dl>
 {% if d.notes %}<p class="muted">{{ d.notes }}</p>{% endif %}
 <details><summary>编辑设备</summary><form action="/devices/{{ d.id }}/edit" method="post"><input type="hidden" name="csrf" value="{{ csrf }}">{{ fields(d) }}<button class="primary" type="submit">保存修改</button></form></details>
+{% if d.group_name %}<p class="fine">已登记于订阅组：{{ d.group_name }}</p>{% endif %}
+{% include "card_sort.html" %}
+<details class="card-menu">
+  <summary aria-label="{{ d.name }} 操作">⋯</summary>
+  <div class="card-menu-popover"><form action="/devices/{{ d.id }}/delete" method="post">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="danger-action" type="submit" data-confirm-delete data-confirm-message="删除「{{ d.name }}」及它的组内登记？此操作不会撤销已导入手机的订阅。">删除设备</button>
+  </form></div>
+</details>
 </article>{% else %}<article class="panel"><h2>登记第一台设备</h2><p class="muted">设备登记不代表手机已经连接。实际连接需要导入订阅。</p></article>{% endfor %}</section>
 <details class="panel add-gateway" {{ 'open' if not devices or error else '' }}><summary>＋ 添加设备</summary><form action="/devices/add" method="post"><input type="hidden" name="csrf" value="{{ csrf }}">{{ fields(none) }}<button class="primary" type="submit">保存设备</button></form></details>
 <footer>设备名称用于管理记录，不用于识别实际连接的物理设备。</footer>
 </main></div>
 {% endblock %}
+{% block scripts %}<script src="/static/card-actions.js" defer></script><script src="/static/card-order.js" defer></script>{% endblock %}

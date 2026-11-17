@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from controller.api.card_order import router as card_order_router
 from controller.api.dashboard import router
 from controller.api.devices import router as devices_router
 from controller.api.exits import router as exits_router
@@ -113,6 +114,7 @@ def create_app(settings: Settings | None = None):
 
     app.mount("/static", StaticFiles(directory=ROOT / "controller/static"), name="static")
     app.include_router(router)
+    app.include_router(card_order_router)
     app.include_router(gateways_router)
     app.include_router(isps_router)
     app.include_router(exits_router)

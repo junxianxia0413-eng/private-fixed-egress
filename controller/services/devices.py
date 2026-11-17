@@ -51,4 +51,23 @@ def save(settings, data, actor, identifier=None):
 
 def snapshot(settings):
     with connect(settings.database_path) as db:
-        return [dict(row) for row in db.execute("SELECT * FROM devices ORDER BY id")]
+        return [
+            dict(row)
+            for row in db.execute(
+                """SELECT d.*, COALESCE(s.display_name,s.name) AS group_name
+                FROM devices d LEFT JOIN group_devices m ON d.id=m.device_id
+                LEFT JOIN subscription_groups s ON s.id=m.group_id
+                ORDER BY d.display_order=0,d.display_order,d.id"""
+            )
+        ]
+
+
+def delete(settings, identifier, actor):
+    with connect(settings.database_path) as db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute("SELECT name FROM devices WHERE id=?", (identifier,)).fetchone()
+        if not row:
+            raise ValueError("未找到设备。")
+        db.execute("DELETE FROM group_devices WHERE device_id=?", (identifier,))
+        db.execute("DELETE FROM devices WHERE id=?", (identifier,))
+        audit(db, actor, "device.deleted", json.dumps({"id": identifier, "name": row["name"]}))

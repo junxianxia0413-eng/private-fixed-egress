@@ -161,7 +161,8 @@ def _record(settings, token):
         return None
     with connect(settings.database_path) as db:
         row = db.execute(
-            """SELECT s.id,s.name,s.state,s.client_ref,s.exit_id,s.deployed_exit_id,
+            """SELECT s.id,COALESCE(s.display_name,s.name) AS name,
+            s.state,s.client_ref,s.exit_id,s.deployed_exit_id,
             g.host,g.health_json,e.id AS route_id,e.exit_type,
             CASE WHEN e.exit_type='GATEWAY_DIRECT' THEN e.status ELSE i.status END
                 AS egress_status,

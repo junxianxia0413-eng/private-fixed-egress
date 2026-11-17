@@ -231,4 +231,19 @@ MIGRATIONS = [
         "ALTER TABLE subscription_groups ADD COLUMN ai_exit_id INTEGER REFERENCES exit_groups(id)",
         "ALTER TABLE subscription_groups ADD COLUMN ai_providers TEXT NOT NULL DEFAULT '[]'",
     ],
+    [
+        "ALTER TABLE exit_groups ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE devices ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE subscription_groups ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE subscription_groups ADD COLUMN display_name TEXT",
+        "ALTER TABLE exit_jobs ADD COLUMN operation TEXT NOT NULL DEFAULT 'APPLY'",
+        "ALTER TABLE exit_jobs ADD COLUMN change_json TEXT",
+        "DROP TRIGGER immutable_direct_exit_identity",
+        """CREATE TRIGGER immutable_direct_exit_identity
+            BEFORE UPDATE OF direct_expected_ip ON exit_groups
+            WHEN OLD.exit_type='GATEWAY_DIRECT' AND NEW.exit_type='GATEWAY_DIRECT'
+            AND OLD.gateway_id=NEW.gateway_id AND OLD.direct_expected_ip IS NOT NULL
+            AND NEW.direct_expected_ip IS NOT OLD.direct_expected_ip
+            BEGIN SELECT RAISE(ABORT, 'Direct exit identity is immutable'); END""",
+    ],
 ]

@@ -194,6 +194,12 @@ def delete(settings, isp_id, actor):
         if bound:
             raise ValueError(f"该固定出口仍被线路“{bound['name']}”使用，不能删除。")
         if db.execute(
+            """SELECT 1 FROM exit_jobs WHERE operation='EDIT' AND state IN ('QUEUED','RUNNING')
+            AND json_extract(change_json,'$.isp_id')=?""",
+            (isp_id,),
+        ).fetchone():
+            raise ValueError("该固定出口正在被应用到线路，不能删除。")
+        if db.execute(
             "SELECT 1 FROM isp_jobs WHERE isp_id=? AND state IN ('QUEUED','RUNNING')", (isp_id,)
         ).fetchone():
             raise ValueError("该固定出口正在检测，请稍后再删除。")
