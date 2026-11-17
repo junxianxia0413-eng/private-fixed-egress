@@ -233,7 +233,9 @@ def shadowrocket_payload(row, password):
 def clash_payload(row, password):
     primary = _node_name(row, "443 主入口")
     alternate = _node_name(row, "8443 备用入口")
-    proxy_group = row["name"] + " · 固定出口"
+    # Mihomo rule lines are comma-separated. Keep the original name on the nodes.
+    rule_safe_name = " ".join(row["name"].replace(",", "，").splitlines())
+    proxy_group = rule_safe_name + " · 固定出口"
     document = {
         "mixed-port": 7890,
         "mode": "rule",

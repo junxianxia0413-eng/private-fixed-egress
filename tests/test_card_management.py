@@ -3,6 +3,7 @@ import json
 import time
 
 import pytest
+import yaml
 
 from controller.services import exits, groups, isps, subscriptions
 from controller.services.database import connect
@@ -85,6 +86,15 @@ def test_duplicate_group_display_names_render_without_changing_the_link(
     )
     assert [g["name"] for g in groups.snapshot(settings)] == [subscription_data["name"]] * 2
     assert subscriptions.link(settings, first) == link
+    groups.update(
+        settings,
+        first,
+        {"name": "汽车,配件", "device_name": subscription_data["device_name"]},
+        "admin",
+    )
+    profile = yaml.safe_load(subscriptions.payload(settings, link.rsplit("/", 1)[1], "clash"))
+    assert profile["rules"] == ["MATCH,汽车，配件 · 固定出口"]
+    assert profile["proxies"][0]["name"].startswith("汽车,配件 ·")
 
 
 def test_exit_edits_are_verified_and_delete_clears_only_unused_route(
