@@ -64,6 +64,28 @@ def lease(ports, tls_ports):
                 + ", ".join(map(str, tls_ports))
                 + " }\n"
             )
+    # QUIC uses the same verified subscription identity and 70-second lease as TCP.
+    # Probe this set independently so older gateway versions remain compatible.
+    quic_set = (
+        subprocess.run(
+            ["/usr/sbin/nft", "list", "set", "inet", "pfem_guard", "pfem_quic_live"],
+            capture_output=True,
+            timeout=5,
+        ).returncode
+        == 0
+    )
+    if quic_set:
+        rules += "flush set inet pfem_guard pfem_quic_live\n"
+        from gateways import quic
+
+        if ports and quic.ready():
+            rules += (
+                "add element inet pfem_guard pfem_quic_live { "
+                + ", ".join(
+                    f"{port + offset} timeout 70s" for port in ports for offset in (3000, 5000)
+                )
+                + " }\n"
+            )
     result = subprocess.run(
         ["/usr/sbin/nft", "-f", "-"], input=rules.encode(), capture_output=True, timeout=5
     )

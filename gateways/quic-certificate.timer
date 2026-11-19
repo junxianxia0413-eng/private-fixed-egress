@@ -1,0 +1,11 @@
+[Unit]
+Description=Keep QUIC certificate synchronized with Caddy renewal
+
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=60s
+AccuracySec=5s
+Unit=pfem-quic-certificate.service
+
+[Install]
+WantedBy=timers.target

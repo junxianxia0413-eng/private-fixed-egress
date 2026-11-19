@@ -53,7 +53,7 @@ fi
 /usr/local/bin/pfem-sing-box check -c "$managed/config.json"
 install -d -m 755 /usr/local/lib/pfem_gateway /usr/local/lib/pfem_gateway/gateways
 install -d -m 700 /var/lib/pfem-gateway-admin
-for module in __init__.py configuration.py transactions.py remote_probe.py guard.py quality.py ingress.py; do
+for module in __init__.py configuration.py transactions.py remote_probe.py guard.py quality.py ingress.py quic.py ingress_metrics.py; do
   install -m 644 "$module" "/usr/local/lib/pfem_gateway/gateways/$module"
 done
 install -m 755 remote_admin.py /usr/local/sbin/pfem-gateway-admin
@@ -61,6 +61,8 @@ install -m 755 remote_probe.py /usr/local/sbin/pfem-isp-probe
 install -m 644 network.conf /etc/sysctl.d/99-pfem-network.conf
 /usr/sbin/sysctl --system >/dev/null
 install -m 644 gateway.service /etc/systemd/system/pfem-gateway.service
+install -m 644 quic-certificate.service /etc/systemd/system/pfem-quic-certificate.service
+install -m 644 quic-certificate.timer /etc/systemd/system/pfem-quic-certificate.timer
 install -d -m 750 -o pfem-proxy -g pfem-proxy /var/lib/pfem-gateway
 cat > /etc/sudoers.d/pfem-gateway <<'SUDO'
 proxyadmin ALL=(root) NOPASSWD: /usr/local/sbin/pfem-gateway-admin status, /usr/local/sbin/pfem-gateway-admin reconcile, /usr/local/sbin/pfem-gateway-admin restart, /usr/local/sbin/pfem-gateway-admin harden, /usr/local/sbin/pfem-gateway-admin commit-harden

@@ -78,12 +78,24 @@ def probe(settings, gateway, kind):
         safe = {k: report[k] for k in required}
         safe["isp_bound"] = report.get("isp_bound") is True
         safe["https_ready"] = report.get("https_ready")
+        safe["quic_ready"] = report.get("quic_ready") is True
+        safe["quic_obfs_ready"] = report.get("quic_obfs_ready") is True
         safe["version"] = str(report.get("version", ""))[:120]
         for key in ("cpu_percent", "ram_percent", "disk_percent"):
             if not numeric(report.get(key), 100):
                 raise ValueError("Invalid resource measurement")
             safe[key] = report[key]
         for key in ("rx_bytes", "tx_bytes", "connections", "checked_at"):
+            if numeric(report.get(key)):
+                safe[key] = report[key]
+        for key in (
+            "ingress_tcp_connections",
+            "ingress_rtt_median_ms",
+            "ingress_rtt_p95_ms",
+            "ingress_retrans_delta",
+            "ingress_data_segments_delta",
+            "ingress_sample_seconds",
+        ):
             if numeric(report.get(key)):
                 safe[key] = report[key]
         guard = report.get("guard", {})

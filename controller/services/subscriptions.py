@@ -14,7 +14,13 @@ import yaml
 from controller.services.database import audit, connect
 from controller.services.groups import available_exit
 from controller.services.secrets import SecretStore
-from gateways.configuration import client_uuid, tls_path
+from gateways.configuration import (
+    QUIC_OBFS_PORT_BASE,
+    QUIC_PORT_BASE,
+    client_uuid,
+    quic_obfs_password,
+    tls_path,
+)
 
 
 def queue(db, identifier, actor):
@@ -227,7 +233,44 @@ def shadowrocket_payload(row, password):
         _node(row, password, 443, "443 主入口"),
         _node(row, password, 8443, "8443 备用入口"),
     )
+    if _quic_enabled(row):
+        query = urlencode({"sni": row["host"], "insecure": "0"})
+        quic_node = (
+            f"hysteria2://{quote(password, safe='')}@{row['host']}:"
+            f"{QUIC_PORT_BASE + row['id']}?{query}#"
+            f"{quote(_node_name(row, 'QUIC 抗抖动入口'), safe='')}"
+        )
+        nodes = (quic_node, *nodes)
+        if _quic_enabled(row, obfs=True):
+            query = urlencode(
+                {
+                    "sni": row["host"],
+                    "insecure": "0",
+                    "obfs": "salamander",
+                    "obfs-password": quic_obfs_password(password),
+                }
+            )
+            stable = (
+                f"hysteria2://{quote(password, safe='')}@{row['host']}:"
+                f"{QUIC_OBFS_PORT_BASE + row['id']}?{query}#"
+                f"{quote(_node_name(row, 'QUIC 稳定入口'), safe='')}"
+            )
+            nodes = (stable, *nodes)
     return base64.b64encode(("\n".join(nodes) + "\n").encode()).decode()
+
+
+def _quic_enabled(row, obfs=False):
+    try:
+        report = json.loads(row.get("health_json") or "{}")
+        return (
+            report.get("healthy") is True
+            and report.get("quic_ready") is True
+            and (not obfs or report.get("quic_obfs_ready") is True)
+            and type(report.get("checked_at")) in (int, float)
+            and -5 <= time.time() - report["checked_at"] <= 120
+        )
+    except (ValueError, TypeError, AttributeError):
+        return False
 
 
 def clash_payload(row, password):
@@ -294,6 +337,41 @@ def clash_payload(row, password):
         ],
         "rules": [f"MATCH,{proxy_group}"],
     }
+    if _quic_enabled(row):
+        quic_name = _node_name(row, "QUIC 抗抖动入口")
+        document["proxies"].insert(
+            0,
+            {
+                "name": quic_name,
+                "type": "hysteria2",
+                "server": row["host"],
+                "port": QUIC_PORT_BASE + row["id"],
+                "password": password,
+                "sni": row["host"],
+                "skip-cert-verify": False,
+                "udp": False,
+            },
+        )
+        document["proxy-groups"][0]["proxies"].insert(0, quic_name)
+        document["proxy-groups"][0]["interval"] = 60
+        if _quic_enabled(row, obfs=True):
+            stable_name = _node_name(row, "QUIC 稳定入口")
+            document["proxies"].insert(
+                0,
+                {
+                    "name": stable_name,
+                    "type": "hysteria2",
+                    "server": row["host"],
+                    "port": QUIC_OBFS_PORT_BASE + row["id"],
+                    "password": password,
+                    "obfs": "salamander",
+                    "obfs-password": quic_obfs_password(password),
+                    "sni": row["host"],
+                    "skip-cert-verify": False,
+                    "udp": False,
+                },
+            )
+            document["proxy-groups"][0]["proxies"].insert(0, stable_name)
     return yaml.safe_dump(document, allow_unicode=True, sort_keys=False)
 
 

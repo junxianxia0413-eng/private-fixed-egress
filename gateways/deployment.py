@@ -44,6 +44,8 @@ def health(client, action="status"):
         "config_api": result.get("config_api", False),
         "phone_api": result.get("phone_api", False),
         "https_ready": result.get("https_ready"),
+        "quic_ready": result.get("quic_ready") is True,
+        "quic_obfs_ready": result.get("quic_obfs_ready") is True,
         "guard": {
             k: result.get("guard", {}).get(k)
             for k in (
@@ -104,6 +106,10 @@ def bootstrap(gateway, credentials, managed):
                 "guard.timer",
                 "ingress.py",
                 "https_ingress.sh",
+                "quic.py",
+                "ingress_metrics.py",
+                "quic-certificate.service",
+                "quic-certificate.timer",
             ):
                 with sftp.open(f"{directory}/{name}", "w") as file:
                     file.write((FILES / name).read_bytes())

@@ -33,3 +33,8 @@ for port in 443 8443; do
     --max-time 15 --output /dev/null "https://$host:$port/healthz" || exit 79
 done
 printf '%s\n' "$host" > /etc/pfem-gateway/https-ingress-v1
+# QUIC may be added by the next verified transaction. Keep TCP usable if certificate
+# preparation fails; never publish an insecure or unverified QUIC identity.
+if PYTHONPATH=/usr/local/lib/pfem_gateway python3 -m gateways.quic; then
+  systemctl enable --now pfem-quic-certificate.timer
+fi

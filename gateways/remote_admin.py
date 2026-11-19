@@ -140,13 +140,20 @@ def status():
         https_ready = command(
             ["/usr/bin/systemctl", "is-active", "caddy"]
         ).returncode == 0 and check_https(ingress_marker.read_text().strip())
+    sys.path.insert(0, "/usr/local/lib/pfem_gateway")
+    from gateways import quic
+    from gateways.ingress_metrics import sample
+
     return {
         **network_metrics(),
+        **sample(),
         "guard": guard,
         "probe_available": Path("/usr/local/sbin/pfem-isp-probe").is_file(),
         "config_api": Path("/usr/local/lib/pfem_gateway/gateways/transactions.py").is_file(),
         "phone_api": 9 if ingress_marker.is_file() else 8,
         "https_ready": https_ready,
+        "quic_ready": quic.ready(),
+        "quic_obfs_ready": quic.obfs_ready(),
         "healthy": active and firewall and valid and port and blocked and https_ready is not False,
         "ssh_key_only": key_only,
         "firewall": firewall,

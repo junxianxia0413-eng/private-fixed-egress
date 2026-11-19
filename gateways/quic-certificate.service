@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh the verified gateway certificate for QUIC
+After=network-online.target caddy.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=PYTHONPATH=/usr/local/lib/pfem_gateway
+ExecStart=/usr/bin/python3 -m gateways.quic
+TimeoutStartSec=40s
+UMask=0077

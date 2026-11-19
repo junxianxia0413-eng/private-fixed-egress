@@ -14,7 +14,14 @@ import tempfile
 import time
 from pathlib import Path
 
-from gateways.configuration import render, validate
+from gateways import quic
+from gateways.configuration import (
+    QUIC_OBFS_PORT_BASE,
+    QUIC_PORT_BASE,
+    quic_obfs_password,
+    render,
+    validate,
+)
 from gateways.remote_probe import TARGETS, request_all, request_ip
 
 BASE = Path("/var/lib/pfem-gateway-admin")
@@ -85,7 +92,7 @@ def restart():
     service_ready()
 
 
-def verify_client(group, client):
+def verify_client(group, client, protocol="shadowsocks"):
     # A real encrypted client confirms that the generated phone entry reaches the pinned ISP.
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", 0))
@@ -114,6 +121,31 @@ def verify_client(group, client):
         ],
         "route": {"final": "selected"},
     }
+    if protocol in {"hysteria2", "hysteria2-obfs"}:
+        identity = quic.identity()
+        if identity is None:
+            raise ApplyError("QUIC_CERTIFICATE_UNAVAILABLE")
+        config["outbounds"] = [
+            {
+                "type": "hysteria2",
+                "tag": "selected",
+                "server": "127.0.0.1",
+                "server_port": QUIC_PORT_BASE + client["id"],
+                "password": client["password"],
+                "tls": {"enabled": True, "server_name": identity["host"]},
+                "network": "tcp",
+            }
+        ]
+        if protocol == "hysteria2-obfs":
+            config["outbounds"][0].update(
+                {
+                    "server_port": QUIC_OBFS_PORT_BASE + client["id"],
+                    "obfs": {
+                        "type": "salamander",
+                        "password": quic_obfs_password(client["password"]),
+                    },
+                }
+            )
     with tempfile.TemporaryDirectory(prefix="pfem-entry-", dir=str(BASE)) as directory:
         path = Path(directory) / "client.json"
         write(path, json.dumps(config).encode())
@@ -166,6 +198,10 @@ def verify(groups, clients=True, attempts=1):
                 if clients:
                     for client in group.get("clients", []):
                         verify_client(group, client)
+                        if quic.ready():
+                            verify_client(group, client, "hysteria2")
+                            if quic.obfs_ready():
+                                verify_client(group, client, "hysteria2-obfs")
                 break
             except ApplyError as exc:
                 if str(exc).startswith("EXIT_IP_MISMATCH:"):
@@ -240,7 +276,8 @@ def apply(payload):
                 "results": verify(groups, attempts=3),
                 "config_hash": hashlib.sha256(CONFIG.read_bytes()).hexdigest(),
             }
-    config, firewall = render(groups, pwd.getpwnam("pfem-proxy").pw_uid)
+    use_quic = quic.identity() is not None
+    config, firewall = render(groups, pwd.getpwnam("pfem-proxy").pw_uid, quic=use_quic)
     old_groups = json.loads(MANIFEST.read_text()).get("groups", []) if MANIFEST.exists() else []
     old_ports = {20000 + c["id"] for g in old_groups for c in g.get("clients", [])}
     new_ports = {20000 + c["id"] for g in groups for c in g.get("clients", [])}
@@ -305,6 +342,17 @@ def apply(payload):
         ):
             for port in sorted(new_ports):
                 checked(["ufw", "allow", str(port) + "/tcp", "comment", "PFEM-phone-entry"])
+                if use_quic:
+                    for offset in (3000, 5000):
+                        checked(
+                            [
+                                "ufw",
+                                "allow",
+                                str(port + offset) + "/udp",
+                                "comment",
+                                "PFEM-QUIC-entry",
+                            ]
+                        )
         write(MANIFEST, json.dumps({"transaction": transaction, "groups": groups}).encode())
         return {
             "ok": True,

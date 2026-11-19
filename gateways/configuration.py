@@ -7,6 +7,8 @@ import uuid
 from datetime import date
 
 TLS_PORT_BASE = 13000
+QUIC_PORT_BASE = 23000
+QUIC_OBFS_PORT_BASE = 25000
 DIRECT_MARK_BASE = 32000
 AI_DOMAINS = {
     "ANTHROPIC": ["anthropic.com", "claude.ai", "claude.com"],
@@ -24,6 +26,10 @@ def tls_port(identifier):
     if type(identifier) is not int or not 1 <= identifier <= 1000:
         raise ValueError("Invalid subscription identity")
     return TLS_PORT_BASE + identifier
+
+
+def quic_obfs_password(password):
+    return hashlib.sha256(b"pfem-quic-salamander-v1\0" + password.encode()).hexdigest()
 
 
 def tls_path(identifier):
@@ -124,7 +130,7 @@ def validate(groups):
     return groups
 
 
-def render(groups, proxy_uid):
+def render(groups, proxy_uid, *, quic=False):
     validate(groups)
     if type(proxy_uid) is not int or not 1 <= proxy_uid < 65536:
         raise ValueError("Invalid service UID")
@@ -178,7 +184,47 @@ def render(groups, proxy_uid):
                     "password": client["password"],
                 }
             )
-            client_routes.append((client, [client_tag, tls_tag]))
+            tags = [client_tag, tls_tag]
+            if quic:
+                quic_tag = f"subscription-quic-{client['id']}"
+                inbound_tags.append(quic_tag)
+                tags.append(quic_tag)
+                config["inbounds"].append(
+                    {
+                        "type": "hysteria2",
+                        "tag": quic_tag,
+                        "listen": "0.0.0.0",
+                        "listen_port": QUIC_PORT_BASE + client["id"],
+                        "users": [{"name": client_tag, "password": client["password"]}],
+                        "tls": {
+                            "enabled": True,
+                            "certificate_path": "/etc/pfem-gateway/quic-tls/certificate.pem",
+                            "key_path": "/etc/pfem-gateway/quic-tls/key.pem",
+                        },
+                    }
+                )
+                obfs_tag = f"subscription-quic-obfs-{client['id']}"
+                inbound_tags.append(obfs_tag)
+                tags.append(obfs_tag)
+                config["inbounds"].append(
+                    {
+                        "type": "hysteria2",
+                        "tag": obfs_tag,
+                        "listen": "0.0.0.0",
+                        "listen_port": QUIC_OBFS_PORT_BASE + client["id"],
+                        "users": [{"name": client_tag, "password": client["password"]}],
+                        "obfs": {
+                            "type": "salamander",
+                            "password": quic_obfs_password(client["password"]),
+                        },
+                        "tls": {
+                            "enabled": True,
+                            "certificate_path": "/etc/pfem-gateway/quic-tls/certificate.pem",
+                            "key_path": "/etc/pfem-gateway/quic-tls/key.pem",
+                        },
+                    }
+                )
+            client_routes.append((client, tags))
             config["inbounds"].append(
                 {
                     "type": "vless",
@@ -281,12 +327,17 @@ def render(groups, proxy_uid):
         "flush table inet pfem_guard",
         "add set inet pfem_guard pfem_live { type inet_service; flags timeout; timeout 70s; }",
         "add set inet pfem_guard pfem_tls_live { type inet_service; }",
+        "add set inet pfem_guard pfem_quic_live { type inet_service; flags timeout; timeout 70s; }",
         "add chain inet pfem_guard input { type filter hook input priority -10; policy accept; }",
         'add rule inet pfem_guard input iifname != "lo" tcp dport 20001-21000 '
         "tcp dport != @pfem_live drop",
         'add rule inet pfem_guard input iifname "lo" ip saddr 127.0.0.1 '
         "tcp dport 13001-14000 tcp dport != @pfem_tls_live drop",
         'add rule inet pfem_guard input iifname != "lo" tcp dport 13001-14000 drop',
+        'add rule inet pfem_guard input iifname != "lo" udp dport 23001-24000 '
+        "udp dport != @pfem_quic_live drop",
+        'add rule inet pfem_guard input iifname != "lo" udp dport 25001-26000 '
+        "udp dport != @pfem_quic_live drop",
         'add rule inet pfem_guard input iifname != "lo" tcp dport { '
         + ", ".join(map(str, ports))
         + " } drop",
@@ -297,6 +348,13 @@ def render(groups, proxy_uid):
             f"add rule inet pfem_guard output meta skuid {proxy_uid} "
             "ct direction reply tcp sport { " + ", ".join(map(str, public_ports)) + " } accept"
         )
+        if quic:
+            firewall.append(
+                f"add rule inet pfem_guard output meta skuid {proxy_uid} "
+                "ct direction reply udp sport { "
+                + ", ".join(str(port + offset) for port in public_ports for offset in (3000, 5000))
+                + " } accept"
+            )
     for ip, port in sorted(allowed):
         firewall.append(
             f"add rule inet pfem_guard output meta skuid {proxy_uid} "
