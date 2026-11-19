@@ -218,7 +218,12 @@ def retire_source(settings, expected, target_gateway_id, actor, stage):
         rows = selection(settings, db, expected)
         if any(row["gateway_id"] != target_gateway_id for row in rows):
             raise ValueError("新网关绑定尚未完成，旧入口继续保留。")
+        target = dict(
+            db.execute("SELECT * FROM gateways WHERE id=?", (target_gateway_id,)).fetchone()
+        )
         signature = configuration_signature(db)
+    # Recheck the destination on retries before removing the old listeners.
+    deployment.inspect(target, SecretStore(settings.secret_directory), "check")
     stage("RETIRING_SOURCE_LISTENERS")
     gateway, topology = exits.desired(settings, {"gateway_id": source_id, "group_id": None})
     if {row["exit_id"] for row in rows} & {g["id"] for g in topology}:
