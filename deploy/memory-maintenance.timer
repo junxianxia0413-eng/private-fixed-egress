@@ -1,0 +1,11 @@
+[Unit]
+Description=Inspect reclaimable diagnostic resources every five minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=5min
+AccuracySec=15s
+Unit=pfem-memory-maintenance.service
+
+[Install]
+WantedBy=timers.target

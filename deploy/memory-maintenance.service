@@ -1,0 +1,11 @@
+[Unit]
+Description=Inspect memory and release abandoned diagnostic resources
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/private-fixed-egress
+ExecStart=/opt/private-fixed-egress/.venv/bin/python -m scripts.memory_maintenance
+TimeoutStartSec=30
+UMask=0077
+Nice=10
+
