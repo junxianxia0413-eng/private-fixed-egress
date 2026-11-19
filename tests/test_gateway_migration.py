@@ -149,6 +149,10 @@ def test_four_routes_move_atomically_and_keep_existing_subscription_formats(
             ]
             == 4
         )
+    monkeypatch.setattr(
+        "controller.services.gateway_migration.deployment.inspect",
+        lambda *args: pytest.fail("Source HTTPS can be offline during Controller maintenance"),
+    )
     retired = retire_source(settings, expected, target, "admin", lambda stage: None)
     assert retired["gateway_id"] == source
     assert len(retired["retired_routes"]) == 4

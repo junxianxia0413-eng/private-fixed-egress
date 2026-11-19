@@ -224,7 +224,8 @@ def retire_source(settings, expected, target_gateway_id, actor, stage):
     if {row["exit_id"] for row in rows} & {g["id"] for g in topology}:
         raise ValueError("原网关配置仍包含迁移线路，请检查绑定。")
     results, digest = exits.apply_remote(settings, gateway, topology, secrets.token_hex(16), stage)
-    report = deployment.inspect(gateway, SecretStore(settings.secret_directory), "check")
+    # Source HTTPS can depend on the paused Controller. Proxy routes have already
+    # passed apply_remote's exit verification; refresh web health after maintenance.
     with connect(settings.database_path) as db:
         db.execute("BEGIN IMMEDIATE")
         if configuration_signature(db) != signature:
@@ -243,10 +244,6 @@ def retire_source(settings, expected, target_gateway_id, actor, stage):
                     source_id,
                 ),
             )
-        db.execute(
-            "UPDATE gateways SET health_json=?,checked_at=? WHERE id=?",
-            (json.dumps(report), int(time.time()), source_id),
-        )
         audit(
             db,
             actor,
